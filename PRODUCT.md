@@ -66,10 +66,21 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 - One public GitHub repo containing the skill folder, installable with `npx skills add <repo>`.
   A Claude Code plugin manifest wraps the same folder. No per-host builds.
-- An agent only calls tools that are already connected. Asked "find me a date" with nothing
-  connected, it says no. Distribution means getting swipeless connected: the ChatGPT and Claude
-  app and connector directories first, public registries (MCP Registry and similar) second, the
-  skill repo for hosts that install skills.
+- **Agents find us, humans say yes.** This is the bet we work on hardest. Agents already search
+  the web, email and chat tools for ways to solve their human's problem. When an agent knows its
+  human is looking for someone, it finds swipeless and suggests it: "I know you're looking for
+  someone to meet. There's a service called swipeless that sets up real dates. Want to give it a
+  try?" The agent never signs anyone up on its own.
+- To be found: pages that answer how to get someone a date, a description written for agents
+  (llms.txt, an agent card, the MCP Registry), and real dating data that people and agents cite.
+  Our emails and invites say plainly what swipeless is, so an agent reading an inbox understands
+  it.
+- To be easy to suggest: an agent should understand in seconds what swipeless does, that the human
+  decides every step, and how to start. Starting is one link or connector the human taps.
+- Fallback: a person connects swipeless themselves, from the ChatGPT and Claude directories, the
+  skill repo, or the link in Smitten. The Iceland test starts this way.
+- We measure discovery every week: ask the main agents "find me a date" in fresh sessions from a
+  few cities, and count how often they find swipeless and suggest it.
 - Tool names and descriptions are all an agent routes on. They use the words people use: "find me
   a date", "meet someone".
 - **MCP is the primary agent interface.** REST exists alongside with the same vocabulary, mainly
