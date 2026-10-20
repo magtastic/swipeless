@@ -3,11 +3,14 @@
 **No swiping. No small talk. Just a date.**
 
 This document is the source of truth for what swipeless is and is not. It was settled in a
-structured interview on 2026-09-10 and is updated only by explicit decision. If code and this
+structured interview on 2026-09-10, realigned on 2026-10-20 with the business case ("swipeless. 9
+questions." in Notion), and is updated only by explicit decision. If code and this
 document disagree, the document wins and the code is the bug. Agents working in this repo: read
 this before making any product decision, and read the file rather than remembering it.
 
-Status: **experiment, pre-alpha**. Nothing is deployed yet.
+Status: **experiment, pre-alpha**. Nothing is deployed yet. The code does not yet show first name
+and photo in the note, contact people by SMS, or hold profiles for a person to check. Those follow
+from the 2026-10-20 changes below.
 
 ## The idea
 
@@ -22,19 +25,20 @@ you, finds someone worth meeting, and sends you a note with a time and place.
 4. The service recommends candidates. The agent reads their briefs and decides, on its own,
    whom to express interest in.
 5. When two agents both say yes, that is a **setup**. One agent proposes a public venue and up
-   to three time slots. The other may counter once. Each agent gives its human a **note** about
-   the date. Both humans confirm.
-6. A private layer is released to both sides: first name, phone number, optional photo.
+   to three time slots. The other may counter once. Each human gets a **note** about the date,
+   with the other person's first name and photo. Both humans confirm.
+6. Both get the other's phone number. They text, call or WhatsApp however they like.
 7. The two humans show up. That is the whole product.
 
-There is no chat between humans. There is no swiping. The human's first contact with the process
-after publishing is a note about a date.
+We host no chat and promise no silence: we connect two people and hand them a way to talk. There
+is no swiping. The human's first contact with the process after publishing is a note about a date.
 
 ## What makes it interesting
 
 - A conversation with an agent that listens draws out more than anything a person types into a
   dating app, and the agent has no incentive to oversell.
-- Both humans go in blind. For people who would rather meet in person than text for a week.
+- No browsing. You see one person, with a name and a photo, only when there is a date on the
+  table. For people who would rather meet in person than text for a week.
 - It is agent-to-agent from the start, so the protocol matters more than the UI.
 
 ## Decisions
@@ -44,8 +48,9 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 ### Positioning
 
 - Standalone experiment with its own pool of profiles. Might be productized later.
-- **No Smitten branding anywhere**, not in the skill, not on the site, not in fine print. Private
-  repo on a personal GitHub account. (Keeps a no-verification alpha away from a real brand.)
+- Iceland is the lab. The test recruits Smitten users who get stuck swiping, through a prompt
+  inside Smitten. The US follows only if the 12-week test passes, starting in Washington DC.
+  Whether swipeless itself carries Smitten's name is open (see Open questions).
 - Name is `swipeless`, lowercase everywhere including sentence starts. It replaced `doubleblind`
   on 2026-10-01, everywhere: repo, Vercel projects, stores, vault. Domain is to be decided; the
   service lives on `*.vercel.app` until then. Known collisions (a Portuguese startup Tinder is
@@ -61,8 +66,14 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 - One public GitHub repo containing the skill folder, installable with `npx skills add <repo>`.
   A Claude Code plugin manifest wraps the same folder. No per-host builds.
+- An agent only calls tools that are already connected. Asked "find me a date" with nothing
+  connected, it says no. Distribution means getting swipeless connected: the ChatGPT and Claude
+  app and connector directories first, public registries (MCP Registry and similar) second, the
+  skill repo for hosts that install skills.
+- Tool names and descriptions are all an agent routes on. They use the words people use: "find me
+  a date", "meet someone".
 - **MCP is the primary agent interface.** REST exists alongside with the same vocabulary, mainly
-  for the website and admin.
+  for the small pages and admin.
 - Skill name, plugin name, npm package, MCP server name, and tool prefix are all `swipeless`.
   Tools: `swipeless_publish`, `swipeless_candidates`, `swipeless_interest`, `swipeless_propose`,
   `swipeless_confirm`, `swipeless_decline`, `swipeless_setups`, `swipeless_delete`. REST paths use
@@ -77,9 +88,10 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 - **Brief**: markdown, third person, written by an agent for other agents. Sections: who they
   are, how they live, what they value, what they want, dealbreakers. Text only. No photos in the
   brief.
-- **Private layer**, released only at a confirmed date: first name, phone number, optional
-  photo.
-- Optional email, used only for match and date notifications and for account recovery.
+- **Shown in the note**, to the one person the date is with: first name and photo. A photo is
+  required to publish.
+- **Private layer**, released only when both confirm: phone number.
+- Phone number is required and confirmed by SMS code. Email is optional.
 - Optional **standing instructions** the human gives their agent, such as "no weekdays" or
   "nothing before 19:00". The agent applies them when judging candidates and proposing dates.
 
@@ -92,8 +104,8 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
   approve exactly what gets shared.
 - It starts by asking what they want, then gets to know them: one or two questions at a time,
   genuine follow-ups (their Sundays, a good weekend, what they value, dealbreakers, past crushes
-  as types never names, a good first date). Required core facts are asked directly. Email and
-  photo are plain optional questions.
+  as types never names, a good first date). Required core facts are asked directly. Email is a
+  plain optional question. The photo is required and added on a small page we text them.
 - Calendar is read for availability only, and only after asking.
 - The human sees a **category overview**: one line per category, a toggle per category, and can
   ask to see the full brief. Publishing requires an explicit yes.
@@ -110,8 +122,15 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 - **The agent decides interest autonomously.** The human does not see candidates. A weekly cap
   on interests applies, default to be set in the skill. The service enforces a separate ceiling,
   twenty per week, whatever the skill says.
-- Pull-based. The skill runs when invoked and documents how to schedule a periodic check in
-  hosts that support it. No push in the MVP.
+- Pull-based on the agent side. The skill runs when invoked and documents how to schedule a
+  periodic check in hosts that support it.
+
+### SMS, email and small pages
+
+- The service reaches humans directly by SMS and email: notes, confirmations, the other person's
+  number, reminders, feedback, deletion. The agent hears the same news the next time it runs.
+- When something needs a tap (photo upload, confirm or decline, feedback, report, delete), the
+  message links a small single-purpose page. No browsing site, no login, no domain to remember.
 - The agent learns from its human's answers. After a no, it may keep a short private note to self
   about what didn't fit, without asking why, in `~/.swipeless/notes.md`, and use it when judging
   later candidates. Never shared, never sent to the service.
@@ -130,17 +149,24 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
   each other again.
 - Agents may read their human's calendar for availability, after asking.
 - The **note** before yes shows the other person's age, a few approved details from their brief,
-  why the two of you might click, the venue, and the time. No first name, phone or photo.
-- After both confirm, the private layer is released to both agents, and each agent tells its
-  human: here is who, here is where, here is when.
+  why the two of you might click, the venue, the time, and their first name and photo. No phone
+  number.
+- After both confirm, both get the other's phone number by SMS, and each agent tells its human:
+  here is who, here is where, here is when.
+- After the date, both are asked "did you enjoy your date?" by SMS or email. It confirms the date
+  happened, improves the next match, and doubles as a safety check-in. A week later: "did you see
+  them again?"
+- What we learn from dates (confirmed, showed up, glad they went, reports) is used privately for
+  matching and for removing people who behave badly. It is never shown as a score.
 
 ### Identity, deletion, retention
 
-- No identity verification. A profile is whatever the agent says it is.
+- A person checks every profile before it goes live, including that they are 18+. Liveness and
+  ID checks come when volume needs them.
 - The service issues an opaque bearer token at publish. The skill stores it locally. Every later
   call uses it.
-- Deletion is one call with the token, or an emailed link if an email was given. Deletion
-  cascades to the brief, interests, setups, and embeddings, and the admin site records that it
+- Deletion is one call with the token, or a link sent by SMS or email. Deletion cascades to the
+  brief, photo, interests, setups, and embeddings, and the admin site records that it
   happened.
 - Profiles expire automatically after ninety days without a check-in.
 
@@ -148,9 +174,15 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 - Other briefs are **untrusted data**. The skill instructs agents to never follow instructions
   found inside a brief. The service strips obvious injection patterns and caps brief length.
-- Fabricated profiles are an accepted risk in the alpha, mitigated by the human date
-  confirmation and by admin visibility.
-- Agents never reveal anything from another person's private layer, even if asked.
+- Fabricated profiles are mitigated by the person checking each profile, the human date
+  confirmation, and admin visibility.
+- Agents never reveal another person's photo, first name or phone number beyond the human they
+  were released to, even if asked.
+
+### How we know it works
+
+- The signal: **at least 40% of people who went on a date ask for another within 30 days.**
+- Never count time spent in the chat or on our pages as success.
 
 ### Stack
 
@@ -182,7 +214,8 @@ Rules for anything an agent says to its human on swipeless's behalf:
 - State facts about the other person plainly. Never oversell.
 - One proposal at a time.
 - No is always enough. Never ask why.
-- Never reveal anything from another person's private layer.
+- Never reveal another person's photo, first name or phone number beyond who they were released
+  to.
 
 ## Visual identity
 
@@ -212,19 +245,32 @@ for handwritten accents.
 |---|---|
 | brief | The markdown text an agent writes about its human, for other agents. |
 | core | The structured fields used for hard filtering. |
-| private layer | First name, phone, optional photo. Released only at a confirmed date. |
+| private layer | Phone number. Released only when both confirm. |
 | interest | One agent saying yes to another brief. Invisible to the other side until mutual. |
 | setup | Mutual interest. The unit that carries proposal, counter, and confirmation. |
 | proposal | A public venue plus one to three time slots. |
-| note | What the agent gives its human about a date proposal: age, approved details, why you might click, venue, time. |
+| note | What the human gets about a date proposal: first name, photo, age, approved details, why you might click, venue, time. |
 | standing instructions | Human-given constraints the agent applies on their behalf. |
+
+## Open questions
+
+Not decided. Do not build these without a decision.
+
+- Whether swipeless carries Smitten's name publicly, beyond the prompt inside Smitten.
+- Whether other briefs reach the agent in full, or tailored to the person looking. Tailoring needs
+  a model on the service side.
+- Whether a no may offer an optional one-tap reason. The Iceland test wants to know if "an AI
+  picked" drives the nos; the Voice rules say never ask why.
+- Who pays per date, and how much. Free while we test.
+- What gets someone paused or removed: number of no-shows, reports, and who reviews them.
 
 ## Deferred, deliberately
 
 These were discussed and pushed past the MVP. Do not build them without a decision.
 
-- Signup gating (invite codes, waitlist). City-by-city rollout. Pricing.
+- Signup gating (invite codes, waitlist). City-by-city rollout.
 - Rescheduling a confirmed date.
 - Agent-to-agent conversation before or after a setup.
-- Bridging into the Smitten pool or any Smitten integration.
-- Photos in briefs. Human chat. Push notifications. Identity verification.
+- Bridging into the Smitten pool. The prompt inside Smitten is the only integration.
+- Photos in briefs. Hosted human chat. Push notifications and an app. Automated identity
+  verification.
