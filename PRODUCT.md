@@ -3,43 +3,55 @@
 **No swiping. No small talk. Just a date.**
 
 This document is the source of truth for what swipeless is and is not. It was settled in a
-structured interview on 2026-09-10, realigned on 2026-10-20 with the business case ("swipeless. 9
-questions." in Notion), and is updated only by explicit decision. If code and this
-document disagree, the document wins and the code is the bug. Agents working in this repo: read
-this before making any product decision, and read the file rather than remembering it.
+structured interview on 2026-09-10, realigned on 2026-10-20 and again on 2026-10-23 with the
+business case ("swipeless. 9 questions." in Notion, which wins where the two disagree), and is
+updated only by explicit decision. If code and this document disagree, the document wins and the
+code is the bug. Agents working in this repo: read this before making any product decision, and
+read the file rather than remembering it.
 
-Status: **experiment, pre-alpha**. Nothing is deployed yet. The code does not yet show first name
-and photo in the note, contact people by SMS, or hold profiles for a person to check. Those follow
-from the 2026-10-20 changes below.
+Status: **experiment, pre-alpha**. Nothing is deployed yet. The code still runs the older flow:
+mutual agent interest, an agent-proposed venue with one counter, full briefs to every agent, no
+server-side model. It does not yet tailor briefs, suggest the date from the service, reach the
+other person by SMS, show first name and photo in the note, or hold profiles for a person to
+check. Those follow from the 2026-10-20 and 2026-10-23 changes below.
 
 ## The idea
 
-The old-fashioned setup, by a friend who knows lots of single people and keeps secrets. Most people
-now have an agent they talk to every day. swipeless lets that agent be that friend: it gets to know
-you, finds someone worth meeting, and sends you a note with a time and place.
+swipeless lets your AI find you a date. You tell ChatGPT or Claude "find me a date". It asks you a
+few questions and checks swipeless, where other people's AIs have done the same. When two people
+look like a good fit, swipeless suggests a first date made for them. You get one message with
+their first name and photo, a time and a place. When you both say yes, you get each other's phone
+numbers. Dating minus the screen: no app, no swiping, no weeks of chatting.
 
-1. The agent interviews its human: a real conversation, one or two questions at a time. It writes
-   a **brief** in third person from what the human told it.
-2. The human reviews an overview of what will be shared, toggles categories, and approves.
-3. The agent publishes the brief to the swipeless service.
-4. The service recommends candidates. The agent reads their briefs and decides, on its own,
-   whom to express interest in.
-5. When two agents both say yes, that is a **setup**. One agent proposes a public venue and up
-   to three time slots. The other may counter once. Each human gets a **note** about the date,
-   with the other person's first name and photo. Both humans confirm.
-6. Both get the other's phone number. They text, call or WhatsApp however they like.
+1. The agent interviews its human: a short conversation, a few questions at a time. It writes a
+   **brief** in third person from what the human told it.
+2. The human reviews an overview of what will be shared, toggles categories, and approves. They
+   confirm their phone number and add a photo on a small page we text them. A person at
+   swipeless checks the profile, including that they are 18+, before it goes live.
+3. The service sends the agent a few candidates, each brief **tailored to the person looking**.
+   The agent picks using everything it knows about its human. Only its pick comes back to us.
+4. When the agent picks someone, swipeless suggests a first date made for both: a public place
+   and a time. The agent shows its human the **note**: first name, photo, why it fits, the place
+   and the time. If nothing fits yet: "Nothing perfect yet. Go live your life, we'll text you."
+5. If the human says yes, the other person gets the same kind of note by SMS. They say yes or no.
+6. When both say yes, both get the other's phone number. They text, call or WhatsApp however
+   they like.
 7. The two humans show up. That is the whole product.
 
 We host no chat and promise no silence: we connect two people and hand them a way to talk. There
-is no swiping. The human's first contact with the process after publishing is a note about a date.
+is no swiping. Interest stays hidden until both say yes, so nobody ever sees a no.
 
 ## What makes it interesting
 
-- A conversation with an agent that listens draws out more than anything a person types into a
-  dating app, and the agent has no incentive to oversell.
-- No browsing. You see one person, with a name and a photo, only when there is a date on the
-  table. For people who would rather meet in person than text for a week.
-- It is agent-to-agent from the start, so the protocol matters more than the UI.
+- Nothing to download. swipeless lives inside the AI you already talk to, which already knows
+  you. A normal chat with ChatGPT or Claude is enough; it does not need an agent that acts on its
+  own.
+- Your AI does the judging, on your side. It never sees anyone's full profile, and nobody's full
+  profile leaves swipeless.
+- Real people only. A person checks every profile, and the human, not the AI, says yes to every
+  date.
+- Agents that act on their own (OpenAI Dots, Meta Muse) search for ways to solve your problem. The
+  bet is that they find swipeless and suggest it.
 
 ## Decisions
 
@@ -48,36 +60,52 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 ### Positioning
 
 - Standalone experiment with its own pool of profiles. Might be productized later.
-- Iceland is the lab. The test recruits Smitten users who get stuck swiping, through a prompt
-  inside Smitten. The US follows only if the 12-week test passes, starting in Washington DC.
-  Whether swipeless itself carries Smitten's name is open (see Open questions).
+- Who it is for: single people looking for someone who already talk to ChatGPT or Claude about
+  their lives, and would rather meet than chat.
+- Iceland is the lab for the mechanics: Smitten has about 15,000 monthly actives there. The test
+  recruits Smitten users who get stuck (50 left swipes with no match) with a prompt inside
+  Smitten: "Tired of swiping? Ask your AI to find you a date." We also invite women directly,
+  because the stuck audience is about 69% men. The US is the market and follows only if the
+  12-week test passes, starting in Washington DC, with Chicago as backup. Whether swipeless
+  itself carries Smitten's name is open (see Open questions).
 - Name is `swipeless`, lowercase everywhere including sentence starts. It replaced `doubleblind`
   on 2026-10-01, everywhere: repo, Vercel projects, stores, vault. Domain is to be decided; the
   service lives on `*.vercel.app` until then. Known collisions (a Portuguese startup Tinder is
   suing, an iOS app using "swipeless" in its title, the phrase as a generic label) were accepted.
-- Brand position: the old-fashioned friend setup. swipeless is "that friend" who knows lots of
-  single people and keeps secrets, for people who would rather meet in person.
+- Brand position: dating minus the screen. We sell a real person and a real date, never "AI
+  dating" and never "agentic dating": AI that gets you off your phone and in front of someone
+  real. (40% of singles say they'd refuse to date someone who uses an AI companion.)
 - Tone: warm voice to the human, dry protocol underneath. Notes read like a short letter from a
   friend; the API, schemas and tool parameters stay technical.
-- Audience for v1 is anyone with an agent, not only developers. Closed alpha in practice, open
-  signup in mechanism. Gating is deferred.
+- Audience for v1 is anyone with an AI, not only developers. Anyone can sign up anywhere, so we
+  don't fill a city before opening. Gating is deferred.
 
 ### Distribution
 
+- **The main bet: agents find swipeless on their own** when their human is looking for someone,
+  and suggest it. Three things have to work:
+  - Be found: pages written to answer "how do I get a date", a plain machine-readable description
+    (llms.txt, an agent card, the MCP Registry), and Smitten's dating data published as reports
+    and stats people and AIs cite, with swipeless in them. Our emails and invites read as "this
+    is how you get a date" when an agent finds them in someone's inbox.
+  - Be easy to suggest: an agent understands in seconds what swipeless does, that the human
+    decides every step, and how to start. Starting is one link or connector to tap.
+  - The human decides: an agent never signs anyone up on its own. The human chooses to try it,
+    approves what's shared, and confirms every date.
+- Fallback, and how the Iceland test starts: listing in the ChatGPT and Claude directories, and
+  the link inside Smitten. We list in both from day one.
+- An agent only calls tools that are already connected. Distribution means getting swipeless
+  suggested and connected.
 - One public GitHub repo containing the skill folder, installable with `npx skills add <repo>`.
   A Claude Code plugin manifest wraps the same folder. No per-host builds.
-- An agent only calls tools that are already connected. Asked "find me a date" with nothing
-  connected, it says no. Distribution means getting swipeless connected: the ChatGPT and Claude
-  app and connector directories first, public registries (MCP Registry and similar) second, the
-  skill repo for hosts that install skills.
 - Tool names and descriptions are all an agent routes on. They use the words people use: "find me
   a date", "meet someone".
 - **MCP is the primary agent interface.** REST exists alongside with the same vocabulary, mainly
   for the small pages and admin.
 - Skill name, plugin name, npm package, MCP server name, and tool prefix are all `swipeless`.
-  Tools: `swipeless_publish`, `swipeless_candidates`, `swipeless_interest`, `swipeless_propose`,
-  `swipeless_confirm`, `swipeless_decline`, `swipeless_setups`, `swipeless_delete`. REST paths use
-  the same words so the two interfaces never drift.
+  Tools: `swipeless_publish`, `swipeless_candidates`, `swipeless_interest`, `swipeless_confirm`,
+  `swipeless_decline`, `swipeless_setups`, `swipeless_delete`. REST paths use the same words so
+  the two interfaces never drift.
 - Local state lives in `~/.swipeless/`. The doubleblind test data was discarded at the rename,
   so there is no migration from the old path.
 
@@ -85,27 +113,30 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 - **Structured core** for filtering: age, gender, interested in, city and country, date radius,
   availability pattern.
-- **Brief**: markdown, third person, written by an agent for other agents. Sections: who they
-  are, how they live, what they value, what they want, dealbreakers. Text only. No photos in the
-  brief.
+- **Brief**: markdown, third person, written by an agent. Sections: who they are, how they live,
+  what they value, what they want, dealbreakers. Text only. No photos in the brief. The full
+  brief never leaves swipeless; other agents only see a version tailored to them.
 - **Shown in the note**, to the one person the date is with: first name and photo. A photo is
   required to publish.
-- **Private layer**, released only when both confirm: phone number.
+- **Private layer**, released only when both say yes: phone number.
 - Phone number is required and confirmed by SMS code. Email is optional.
 - Optional **standing instructions** the human gives their agent, such as "no weekdays" or
-  "nothing before 19:00". The agent applies them when judging candidates and proposing dates.
+  "nothing before 19:00". The agent applies them when picking and passes time constraints as
+  availability.
 
 ### Consent
 
-- **Interview, not inference.** The brief comes only from what the human tells the agent in this
-  conversation, and how they say it. The agent does not mine memory, connected tools, account
-  metadata, email addresses, usernames, timezones, avatars, or files to guess facts.
+- **Interview, not inference, for the brief.** The brief comes only from what the human tells the
+  agent in this conversation, and how they say it. The agent does not mine memory, connected
+  tools, account metadata, email addresses, usernames, timezones, avatars, or files to write it.
+- Picking is different: the agent may use everything it already knows about its human to judge
+  candidates, because that judgement stays on the agent's side and only the pick reaches us.
 - The agent says up front: this conversation is between you and me; nothing leaves it until you
   approve exactly what gets shared.
-- It starts by asking what they want, then gets to know them: one or two questions at a time,
-  genuine follow-ups (their Sundays, a good weekend, what they value, dealbreakers, past crushes
-  as types never names, a good first date). Required core facts are asked directly. Email is a
-  plain optional question. The photo is required and added on a small page we text them.
+- It starts by asking what they want, then gets to know them in a few questions: genuine
+  follow-ups (their Sundays, a good weekend, what they value, dealbreakers, past crushes as types
+  never names, a good first date). Required core facts are asked directly. Email is a plain
+  optional question. The photo is required and added on a small page we text them.
 - Calendar is read for availability only, and only after asking.
 - The human sees a **category overview**: one line per category, a toggle per category, and can
   ask to see the full brief. Publishing requires an explicit yes.
@@ -117,47 +148,58 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 ### Matching
 
 - The service applies hard filters (mutual gender interest, age, distance, country) and ranks
-  by embedding nearest neighbours over briefs. It returns the top ten with full briefs. No
-  server-side LLM.
-- **The agent decides interest autonomously.** The human does not see candidates. A weekly cap
-  on interests applies, default to be set in the skill. The service enforces a separate ceiling,
-  twenty per week, whatever the skill says.
+  by embedding nearest neighbours over briefs. It sends the agent a few candidates.
+- Each candidate's brief is **tailored to the person looking**, for example "loves dogs like you,
+  hikes most weekends, and you said you're into the outdoors". This needs a model on the service
+  side.
+- **The agent picks autonomously.** It may pick none. A weekly cap on picks applies, default to
+  be set in the skill. The service enforces a separate ceiling, twenty per week, whatever the
+  skill says. In Iceland the service also limits how many date requests each man receives.
+- During the Iceland test, the service compares the agent's picks with its own ranking, about
+  160 suggestions each. If the agent's picks don't get more yeses, "your AI knows you" leaves the
+  pitch.
 - Pull-based on the agent side. The skill runs when invoked and documents how to schedule a
   periodic check in hosts that support it.
 
 ### SMS, email and small pages
 
-- The service reaches humans directly by SMS and email: notes, confirmations, the other person's
-  number, reminders, feedback, deletion. The agent hears the same news the next time it runs.
-- When something needs a tap (photo upload, confirm or decline, feedback, report, delete), the
-  message links a small single-purpose page. No browsing site, no login, no domain to remember.
+- Everything after signup reaches humans by SMS, email or agent reminders: notes, date requests,
+  the other person's number, reminders, feedback, payment, deletion. The agent hears the same
+  news the next time it runs.
+- When something needs a tap (photo upload, yes or no, feedback, report, pay, delete), the
+  message links a small single-purpose page. Nothing to download, no login, no site to remember.
+- Every no offers an optional one-tap reason on the page. The agent never asks why. (If "because
+  an AI picked" is more than a quarter of the nos, that is its own risk.)
 - The agent learns from its human's answers. After a no, it may keep a short private note to self
-  about what didn't fit, without asking why, in `~/.swipeless/notes.md`, and use it when judging
-  later candidates. Never shared, never sent to the service.
+  about what didn't fit in `~/.swipeless/notes.md`, and use it when picking later. Never shared,
+  never sent to the service.
 
 ### The setup and the date
 
-- Mutual interest creates a setup.
-- The first agent proposes a **public venue** and one to three time slots. The other agent may
-  counter once with a different venue or slots. Then both humans confirm or the setup dies.
-- Either agent may decline a setup once it is mutual, at any point before both humans confirm.
-  Declining is final and the other agent sees only `declined`. The agent never tells its human
-  that someone declined them. (No is always enough, and saying no is invisible to the other
-  person.)
-- A setup with no transition for fourteen days expires. A confirmed setup does not expire. A
-  one-way interest that expires unreciprocated closes the pair for good: they are never shown to
-  each other again.
+- An agent's pick creates a setup. swipeless suggests a first date made for both people: a
+  **public place** and a time that fits both availabilities, like coffee and a walk on Thursday.
+- The picking human sees the note first, through their agent. If they say yes, the other person
+  gets a date request by SMS. Both humans must say yes or the setup dies.
+- Either human may say no at any point before both have said yes. No is final, and the other side
+  sees only that the date is not happening. Nobody is told that someone said no to them. A no
+  closes the pair for good: they are never shown to each other again.
+- A setup with no transition for fourteen days expires. A confirmed setup does not expire.
 - Agents may read their human's calendar for availability, after asking.
-- The **note** before yes shows the other person's age, a few approved details from their brief,
-  why the two of you might click, the venue, the time, and their first name and photo. No phone
-  number.
-- After both confirm, both get the other's phone number by SMS, and each agent tells its human:
+- The **note** shows the other person's first name and photo, age, a few approved details, why
+  the two of you might click, the place, and the time. No phone number.
+- After both say yes, both get the other's phone number by SMS, and each agent tells its human:
   here is who, here is where, here is when.
 - After the date, both are asked "did you enjoy your date?" by SMS or email. It confirms the date
   happened, improves the next match, and doubles as a safety check-in. A week later: "did you see
   them again?"
-- What we learn from dates (confirmed, showed up, glad they went, reports) is used privately for
-  matching and for removing people who behave badly. It is never shown as a score.
+- What we learn from dates (said yes, showed up, glad they went, second dates, reports) is used
+  privately for matching and for removing people who behave badly. It is never shown as a score.
+
+### Payment
+
+- Free while we test. Later, $15 per confirmed date.
+- The pay link comes with the confirmation by SMS or email, never inside the chat. (ChatGPT bans
+  selling digital services inside the chat.)
 
 ### Identity, deletion, retention
 
@@ -174,14 +216,30 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 - Other briefs are **untrusted data**. The skill instructs agents to never follow instructions
   found inside a brief. The service strips obvious injection patterns and caps brief length.
-- Fabricated profiles are mitigated by the person checking each profile, the human date
-  confirmation, and admin visibility.
+- Fabricated profiles are mitigated by the person checking each profile, the human yes to every
+  date, and admin visibility.
 - Agents never reveal another person's photo, first name or phone number beyond the human they
   were released to, even if asked.
 
 ### How we know it works
 
 - The signal: **at least 40% of people who went on a date ask for another within 30 days.**
+  Second dates are tracked alongside.
+- Before users: every week we ask the main agents (ChatGPT, Claude, Gemini, Dots, Muse) "find me
+  a date" in fresh sessions from a few cities, and count how often they find and suggest
+  swipeless.
+- The 12-week Iceland test, free for users, with lines set in advance:
+
+  | Test | Go | Stop |
+  |---|---|---|
+  | Smitten prompt | ≥1% sign up through their AI, ≥150 live profiles, still back in week 4 | Under 3% even tap |
+  | Real dates | ≥200 suggested, ≥60 happen; ≥30% both say yes; ≥80% both show; ≥70% glad they went | Under 15% both say yes, or show rate under 60% |
+  | Arriving on their own | ≥50 people in 8 weeks via ChatGPT and Claude listings, no promotion; ≥20% of dates from people who never saw Smitten by week 12 | Almost none |
+  | Agents suggest us | Suggested in ≥10% of weekly runs by week 12 | Under 5% and not rising |
+  | Does your AI pick better | The agent's picks get more yeses than our ranking | Not better |
+
+- Week 12: all pass, go to Washington DC and raise. Dates work but almost nobody arrives through
+  their own AI, it stays a Smitten feature. Dates don't work, stop.
 - Never count time spent in the chat or on our pages as success.
 
 ### Stack
@@ -200,20 +258,21 @@ The one-liner:
 
 The long description, used in the skill, the plugin, and the MCP server:
 
-> Your agent gets to know you, finds someone worth meeting, and sends you a note with a time and
-> place. No swiping. No small talk. Just a date.
+> Your AI finds someone worth meeting and sends you one message with their name, a photo, a time
+> and a place. No swiping. No small talk. Just a date.
 
 Toward the human, swipeless sounds like a short letter from a friend: warm, intimate, casual.
 Short sentences. Lowercase is fine. Gentle humor about apps, never about people. Low pressure
-("until then, nothing to do"). A note may sign off informally, "xo, your agent". Protocol copy
-(API.md, schemas, tool parameter docs) stays dry and technical.
+("go live your life, we'll text you"). A note may sign off informally, "xo, your agent". Protocol
+copy (API.md, schemas, tool parameter docs) stays dry and technical.
 
 Rules for anything an agent says to its human on swipeless's behalf:
 
 - Say "you" and "them". Never "user", "profile owner", or "the candidate".
 - State facts about the other person plainly. Never oversell.
 - One proposal at a time.
-- No is always enough. Never ask why.
+- No is always enough. The agent never asks why; the optional one-tap reason lives on our page.
+- Never say "AI dating". Talk about a real person and a real date.
 - Never reveal another person's photo, first name or phone number beyond who they were released
   to.
 
@@ -243,13 +302,14 @@ for handwritten accents.
 
 | Term | Meaning |
 |---|---|
-| brief | The markdown text an agent writes about its human, for other agents. |
+| brief | The markdown text an agent writes about its human. Never leaves swipeless in full. |
+| tailored brief | The version of a brief the service writes for one person looking at it. |
 | core | The structured fields used for hard filtering. |
-| private layer | Phone number. Released only when both confirm. |
-| interest | One agent saying yes to another brief. Invisible to the other side until mutual. |
-| setup | Mutual interest. The unit that carries proposal, counter, and confirmation. |
-| proposal | A public venue plus one to three time slots. |
-| note | What the human gets about a date proposal: first name, photo, age, approved details, why you might click, venue, time. |
+| private layer | Phone number. Released only when both say yes. |
+| interest | An agent picking a candidate. Invisible to the other side until both humans say yes. |
+| setup | The date swipeless suggests after a pick. Carries the place, the time, and both humans' yes. |
+| note | What a human gets about a setup: first name, photo, age, approved details, why you might click, place, time. |
+| date request | The note as it reaches the picked person, by SMS. |
 | standing instructions | Human-given constraints the agent applies on their behalf. |
 
 ## Open questions
@@ -257,11 +317,7 @@ for handwritten accents.
 Not decided. Do not build these without a decision.
 
 - Whether swipeless carries Smitten's name publicly, beyond the prompt inside Smitten.
-- Whether other briefs reach the agent in full, or tailored to the person looking. Tailoring needs
-  a model on the service side.
-- Whether a no may offer an optional one-tap reason. The Iceland test wants to know if "an AI
-  picked" drives the nos; the Voice rules say never ask why.
-- Who pays per date, and how much. Free while we test.
+- Whether the picked person can ask for another time or place, or only say yes or no.
 - What gets someone paused or removed: number of no-shows, reports, and who reviews them.
 
 ## Deferred, deliberately
