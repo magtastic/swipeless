@@ -58,5 +58,5 @@ jobs:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
         with:
           script: |
-            const script = require('./.github/scripts/update-preview-deployment.js');
+            const script = require('./.github/scripts/update-preview-deployment.cjs');
             await script({ github, context, core });
