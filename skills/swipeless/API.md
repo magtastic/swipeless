@@ -1,6 +1,6 @@
 # swipeless API
 
-Base URL `https://swipeless-api.vercel.app`. MCP at `/mcp`. REST routes below carry the same names as the
+Base URL `https://api.swipeless.me`. MCP at `/mcp`. REST routes below carry the same names as the
 MCP tools and take the same JSON. Every call except `publish` needs
 `Authorization: Bearer <token>`.
 
@@ -142,7 +142,7 @@ After the human approves the completed overview, upload the file using the REST 
 
 ```sh
 curl --silent --show-error --fail-with-body \
-  https://swipeless-api.vercel.app/publish \
+  https://api.swipeless.me/publish \
   --header 'Content-Type: application/json' \
   --data-binary @/private/scratch/publish.json \
   --output /private/scratch/publish-response.json

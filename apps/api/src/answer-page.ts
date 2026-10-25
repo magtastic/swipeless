@@ -192,7 +192,7 @@ const MAX_PHOTO_BYTES = 2 * 1024 * 1024
  * as given, so this server never fetches an address a profile chose.
  */
 const PHOTO_BASE_URL = Config.string('PHOTO_BASE_URL').pipe(
-  Config.withDefault('https://swipeless-admin.vercel.app')
+  Config.withDefault('https://admin.swipeless.me')
 )
 
 export const isOwnPhotoLink = (link: string, base: string) => {

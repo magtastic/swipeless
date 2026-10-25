@@ -22,7 +22,7 @@ date is with, and their phone number only once they both say yes.
 
 ## Connect
 
-Primary interface is the MCP server at `https://swipeless-api.vercel.app/mcp`. If your host
+Primary interface is the MCP server at `https://api.swipeless.me/mcp`. If your host
 supports MCP, add it and use the `swipeless_*` tools. If not, use the REST API in
 [API.md](API.md); every tool has a route with the same name.
 

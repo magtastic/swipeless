@@ -69,9 +69,10 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
   12-week test passes, starting in Washington DC, with Chicago as backup. Whether swipeless
   itself carries Smitten's name is open (see Open questions).
 - Name is `swipeless`, lowercase everywhere including sentence starts. It replaced `doubleblind`
-  on 2026-10-01, everywhere: repo, Vercel projects, stores, vault. Domain is to be decided; the
-  service lives on `*.vercel.app` until then. Known collisions (a Portuguese startup Tinder is
-  suing, an iOS app using "swipeless" in its title, the phrase as a generic label) were accepted.
+  on 2026-10-01, everywhere: repo, Vercel projects, stores, vault. Domain is `swipeless.me`
+  (since 2026-10-25): the site at the apex, the API and MCP at `api.`, the admin at `admin.`.
+  Known collisions (a Portuguese startup Tinder is suing, an iOS app using "swipeless" in its
+  title, the phrase as a generic label) were accepted.
 - Brand position: dating minus the screen. We sell a real person and a real date, never "AI
   dating" and never "agentic dating": AI that gets you off your phone and in front of someone
   real. (40% of singles say they'd refuse to date someone who uses an AI companion.)

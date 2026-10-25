@@ -32,13 +32,13 @@ const form = (url: URL, choice: string, sig?: string) =>
   })
 
 test('only our own stored-photo links are ever proxied', () => {
-  const base = 'https://swipeless-admin.vercel.app'
+  const base = 'https://admin.swipeless.me'
   expect(
     isOwnPhotoLink(`${base}/api/photos/abc?expires=1&signature=x`, base)
   ).toBe(true)
   for (const link of [
     'https://internal.example/api/photos/abc',
-    'https://swipeless-admin.vercel.app.evil.test/api/photos/abc',
+    'https://admin.swipeless.me.evil.test/api/photos/abc',
     `${base}/admin`,
     'http://169.254.169.254/latest/meta-data',
     'not a url',

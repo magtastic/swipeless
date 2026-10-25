@@ -49,15 +49,16 @@ bun run verify       # typecheck + biome + tests
 
 | | |
 |---|---|
-| API + MCP | https://swipeless-api.vercel.app |
-| Admin | https://swipeless-admin.vercel.app |
-| Website | https://swipeless-web.vercel.app |
+| API + MCP | https://api.swipeless.me |
+| Admin | https://admin.swipeless.me |
+| Website | https://swipeless.me |
 
 All three are Vercel projects under the `smitten-server` team. None is connected to this repo on
 Vercel's side, deliberately: GitHub Actions owns deployment, so the tests gate it.
 
-`*.vercel.app` is where this lives for now, not where it lands. The swipeless domain is not
-chosen yet. The skill hardcodes the API URL, so moving it is also a skill release.
+The domain `swipeless.me` is registered through Vercel under the same team, on Vercel's
+nameservers. The old `swipeless-*.vercel.app` addresses still answer. The skill hardcodes the API
+URL, so moving it is also a skill release.
 
 - `.github/workflows/pr.yml` runs on pull requests to `main`. Pushes to `main` are verified by
   `deploy.yml` alone, so each merge is checked once.
@@ -128,7 +129,7 @@ the button next to a confirmed date. Set on the API and admin Vercel projects:
 | `EMAIL_FROM` | Sender, on a domain verified in Resend. Defaults to `onboarding@resend.dev`, which only delivers to the Resend account's own address |
 | `EMAIL_REPLY_TO` | Optional. Where replies to "how was the date?" land |
 | `ANTHROPIC_API_KEY` | API only. Claude writes the date request's "why you might click" line. Without it the line is left out |
-| `API_BASE_URL` | API only. Origin the yes-or-no links point at. Defaults to `https://swipeless-api.vercel.app`; local `.env` sets `http://localhost:3001` |
+| `API_BASE_URL` | API only. Origin the yes-or-no links point at. Defaults to `https://api.swipeless.me`; local `.env` sets `http://localhost:3001` |
 
 The date request's yes and no boxes link `/answer` on the API, a small page signed for that one
 person and setup with the Blob token, the key photo links already use.
