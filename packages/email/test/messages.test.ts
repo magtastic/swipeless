@@ -74,7 +74,10 @@ test('the date request carries the photo and why they might click, not the addre
   const email = dateRequested('a@example.com', 'Anna', 'Jón', date, {
     photoUrl: 'https://x.test/answer/photo?sig=1',
     fit: 'you both swim in the sea <every> morning.',
+    age: 36,
   })
+  expect(email.html).toContain('Jón, 36, would like to meet you.')
+  expect(email.text).toContain('Jón, 36, would like to meet you.')
   expect(email.html).toContain('<img src="https://x.test/answer/photo?sig=1"')
   expect(email.html).toContain(
     'you both swim in the sea &lt;every&gt; morning.'

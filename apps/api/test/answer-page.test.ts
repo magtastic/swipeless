@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { Effect } from 'effect'
 import { answerUrl, verifyAnswer } from '../src/answer-links.ts'
+import { isOwnPhotoLink } from '../src/answer-page.ts'
 import { CELLO_BRIEF, man, ok, profile, publish } from './support/agent.ts'
 import { hasTestDb, openApp, warnSkipped } from './support/app.ts'
 
@@ -29,6 +30,22 @@ const form = (url: URL, choice: string, sig?: string) =>
     sig: sig ?? url.searchParams.get('sig') ?? '',
     choice,
   })
+
+test('only our own stored-photo links are ever proxied', () => {
+  const base = 'https://swipeless-admin.vercel.app'
+  expect(
+    isOwnPhotoLink(`${base}/api/photos/abc?expires=1&signature=x`, base)
+  ).toBe(true)
+  for (const link of [
+    'https://internal.example/api/photos/abc',
+    'https://swipeless-admin.vercel.app.evil.test/api/photos/abc',
+    `${base}/admin`,
+    'http://169.254.169.254/latest/meta-data',
+    'not a url',
+  ]) {
+    expect(isOwnPhotoLink(link, base)).toBe(false)
+  }
+})
 
 test('a link verifies only for its own setup and person', async () => {
   const setupId = '22222222-2222-4222-8222-222222222222'

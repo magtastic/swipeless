@@ -17,7 +17,7 @@ import {
   type Setup,
   type SetupId,
 } from '@swipeless/shared'
-import { Effect, Layer, Schema } from 'effect'
+import { Config, Effect, Layer, Schema } from 'effect'
 import { type Choice, verifyAnswer } from './answer-links.ts'
 import { CurrentProfile } from './caller.ts'
 import { Swipeless } from './service.ts'
@@ -183,6 +183,56 @@ const PhotoParams = Schema.Struct({
 
 const noPhoto = HttpServerResponse.empty({ status: 404 })
 
+/** Stored photos are at most 1 MiB; anything past this is not one of ours. */
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024
+
+/**
+ * Only our own stored photos are proxied: the short-lived link the admin
+ * app's photo route signs. An external https photo is linked from the email
+ * as given, so this server never fetches an address a profile chose.
+ */
+const PHOTO_BASE_URL = Config.string('PHOTO_BASE_URL').pipe(
+  Config.withDefault('https://swipeless-admin.vercel.app')
+)
+
+export const isOwnPhotoLink = (link: string, base: string) => {
+  try {
+    const url = new URL(link)
+    return (
+      url.origin === new URL(base).origin &&
+      url.pathname.startsWith('/api/photos/')
+    )
+  } catch {
+    return false
+  }
+}
+
+/** Reads at most `limit` bytes, or undefined if the body is longer. */
+const readCapped = async (response: Response, limit: number) => {
+  const declared = Number(response.headers.get('content-length') ?? '0')
+  if (declared > limit || response.body === null) return undefined
+  const reader = response.body.getReader()
+  const chunks: Array<Uint8Array> = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > limit) {
+      await reader.cancel()
+      return undefined
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
+}
+
 /**
  * The other person's photo for the date request email. Same signature as the
  * page, and only while the setup is open to this person; then it is gone.
@@ -199,16 +249,19 @@ const photo = (swipeless: Service) =>
     ) {
       return yield* noPhoto
     }
+    const link = setup.counterpart.photoUrl
+    if (!isOwnPhotoLink(link, yield* PHOTO_BASE_URL)) return yield* noPhoto
     const response = yield* Effect.tryPromise(() =>
-      fetch(setup.counterpart.photoUrl, { signal: AbortSignal.timeout(10_000) })
+      fetch(link, { redirect: 'error', signal: AbortSignal.timeout(10_000) })
     )
     const contentType = response.headers.get('content-type') ?? ''
-    if (!response.ok || !/^image\/(jpeg|png|webp|gif)$/.test(contentType)) {
+    if (!response.ok || !/^image\/(jpeg|png|webp)$/.test(contentType)) {
       return yield* noPhoto
     }
-    const bytes = new Uint8Array(
-      yield* Effect.tryPromise(() => response.arrayBuffer())
+    const bytes = yield* Effect.tryPromise(() =>
+      readCapped(response, MAX_PHOTO_BYTES)
     )
+    if (bytes === undefined) return yield* noPhoto
     return HttpServerResponse.uint8Array(bytes, {
       contentType,
       headers: {

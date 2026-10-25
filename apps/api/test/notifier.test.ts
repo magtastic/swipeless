@@ -112,6 +112,7 @@ describe.skipIf(!hasTestDb)('NotifierEmail', () => {
     const [email] = mailer.sent
     expect(email?.to).toBe('name0@example.com')
     expect(email?.subject).toBe('Name1 would like to meet you')
+    expect(email?.text).toContain('Name1, 30, would like to meet you.')
     expect(email?.text).toContain(FAKE_DATE.venue.name)
     expect(email?.text).not.toContain('+35482200')
     expect(email?.text).toContain('you and Name1 both swim in the sea.')

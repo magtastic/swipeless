@@ -59,13 +59,29 @@ ${input.forBrief}
 ${input.otherBrief}
 </brief>`
 
-/** A model's answer, made safe for a one-line note. */
+/**
+ * What a "why you might click" line never carries, whatever a brief talked
+ * the model into: a link, an email address, or anything shaped like a phone
+ * number. The phone number is the private layer, released only by two yeses.
+ */
+const DISCLOSURE = [
+  /https?:\/\/|www\.|\b[a-z0-9-]+\.(com|is|net|org|io|me|app)\b/i,
+  /[^\s@]+@[^\s@]+\.[a-z]{2,}/i,
+  /(?:\+?\d[\s().-]*){7,}/,
+]
+
+/**
+ * A model's answer, made safe for a one-line note. A line that would disclose
+ * contact details is dropped whole rather than redacted: no line is better
+ * than a strange one.
+ */
 export const cleanFit = (text: string): string | undefined => {
   const line = text
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^["“]|["”]$/g, '')
   if (line.length === 0) return undefined
+  if (DISCLOSURE.some((pattern) => pattern.test(line))) return undefined
   return line.length > MAX_LENGTH
     ? `${line.slice(0, MAX_LENGTH - 1).trimEnd()}…`
     : line

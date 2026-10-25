@@ -84,6 +84,8 @@ export interface DateRequestExtras {
   readonly photoUrl?: string
   /** "Why the two of you might click", one or two plain sentences. */
   readonly fit?: string
+  /** The other person's age, shown beside their first name. */
+  readonly age?: number
 }
 
 /**
@@ -99,14 +101,15 @@ export const dateRequested = (
   date: DatePlace,
   extras: DateRequestExtras = {}
 ): Email => {
-  const { answer, photoUrl, fit } = extras
+  const { answer, photoUrl, fit, age } = extras
+  const who = age === undefined ? otherFirstName : `${otherFirstName}, ${age},`
   const name = escapeHtml(otherFirstName)
   return {
     to,
     subject: `${otherFirstName} would like to meet you`,
     text: [
       `hi ${firstName},`,
-      `${otherFirstName} would like to meet you.`,
+      `${who} would like to meet you.`,
       ...(fit ? [fit] : []),
       where(date),
       answer
@@ -123,7 +126,7 @@ export const dateRequested = (
             },
           ]
         : []),
-      { hand: `${name} would like to meet you.` },
+      { hand: `${escapeHtml(who)} would like to meet you.` },
       ...(fit ? [{ hand: escapeHtml(fit), size: 24 }] : []),
       blank,
       ...whereLines(date),

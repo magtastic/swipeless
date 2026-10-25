@@ -71,6 +71,7 @@ export const NotifierEmail = Layer.effect(
             phone: profiles.phone,
             photoUrl: profiles.photoUrl,
             brief: profiles.brief,
+            age: profiles.age,
           })
           .from(profiles)
           .where(inArray(profiles.id, [profileId, otherId]))
@@ -82,6 +83,7 @@ export const NotifierEmail = Layer.effect(
 
     type Person = {
       readonly firstName: string
+      readonly age: number
       readonly photoUrl: string | null
       readonly brief: string
     }
@@ -119,6 +121,7 @@ export const NotifierEmail = Layer.effect(
           otherBrief: other.brief,
         })
         return {
+          age: other.age,
           ...(answer ? { answer } : {}),
           ...(photoUrl ? { photoUrl } : {}),
           ...(fit ? { fit } : {}),
