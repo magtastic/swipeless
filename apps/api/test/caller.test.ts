@@ -29,6 +29,7 @@ import { Caller, tokenFromAuthorization } from '../src/caller.ts'
 import { EmbeddingModelDeterministic } from '../src/embeddings.ts'
 import { Swipeless } from '../src/service.ts'
 import { TestPhotos } from './support/photos.ts'
+import { TestSeams } from './support/seams.ts'
 
 /**
  * The Caller module against a real Postgres. Everything worth testing here is
@@ -49,6 +50,7 @@ if (!hasTestDb) {
 const TestLayer = Layer.mergeAll(Caller.Default, Swipeless.Default).pipe(
   Layer.provide(EmbeddingModelDeterministic),
   Layer.provide(TestPhotos),
+  Layer.provide(TestSeams),
   Layer.provideMerge(TestDbLive)
 )
 
@@ -65,7 +67,9 @@ const profileFixture = new Profile({
   brief:
     'She is a hydrologist who reads the weather like other people read faces. ' +
     'She values directness. Dealbreaker: calling a car park a hike.',
-  privateLayer: new PrivateLayer({ firstName: 'Sigrún', phone: '+3548221234' }),
+  firstName: 'Sigrún',
+  photoUrl: 'https://example.invalid/sigrun.jpg',
+  privateLayer: new PrivateLayer({ phone: '+3548221234' }),
 })
 
 /** Publishing is the only way a token is ever issued, so tests use it. */

@@ -28,4 +28,5 @@ maintainer's explicit yes.
 - Branches `<type>/<kebab-description>` with type in feat, fix, chore, refactor, docs, test.
 - Commits in imperative mood with an optional scope prefix: `API: Add interest cap`. No
   conventional-commit prefixes.
-- Secrets come from 1Password via `bun run get:env`. Never commit `.env`.
+- Secrets come from 1Password via `bun run get:env:dev` (local database) or `bun run get:env:prod`
+  (production, only for deliberate prod work). Never commit `.env`.

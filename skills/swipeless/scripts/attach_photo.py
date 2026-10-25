@@ -20,8 +20,8 @@ def attach_photo(profile_path: Path, photo_path: Path, output_path: Path) -> Non
     if output_path.resolve() in (profile_path.resolve(), photo_path.resolve()):
         raise ValueError("Output must be a new file, separate from the profile and photo")
     profile = json.loads(profile_path.read_text())
-    if not isinstance(profile, dict) or not isinstance(profile.get("privateLayer"), dict):
-        raise ValueError("Profile JSON must contain a privateLayer object")
+    if not isinstance(profile, dict):
+        raise ValueError("Profile JSON must be an object")
 
     with Image.open(photo_path) as source:
         source.seek(0)
@@ -39,7 +39,7 @@ def attach_photo(profile_path: Path, photo_path: Path, output_path: Path) -> Non
                 break
             clean = clean.resize((max(1, clean.width * 3 // 4), max(1, clean.height * 3 // 4)))
 
-    profile["privateLayer"]["photoUrl"] = (
+    profile["photoUrl"] = (
         "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
     )
     # Exclusive creation avoids overwriting a draft or following an existing symlink.

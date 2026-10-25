@@ -21,9 +21,6 @@ import {
   PrivateLayer,
   Profile,
   type ProfileId,
-  Proposal,
-  ProposeRequest,
-  Venue,
 } from '@swipeless/shared'
 import { and, eq } from 'drizzle-orm'
 import {
@@ -38,6 +35,8 @@ import { EmbeddingModelDeterministic } from '../src/embeddings.ts'
 import { Swipeless } from '../src/service.ts'
 import { hashToken } from '../src/token.ts'
 import { photoObjects, TestPhotos } from './support/photos.ts'
+import { approve } from './support/review.ts'
+import { FAKE_DATE, TestSeams } from './support/seams.ts'
 
 /**
  * The service against a real Postgres, through the same interface the REST and
@@ -59,6 +58,7 @@ if (!hasTestDb) {
 const TestLayer = Swipeless.Default.pipe(
   Layer.provide(EmbeddingModelDeterministic),
   Layer.provide(TestPhotos),
+  Layer.provide(TestSeams),
   Layer.provideMerge(TestDbLive)
 )
 
@@ -82,6 +82,8 @@ type ProfileOverrides = {
   readonly country?: string
   readonly brief?: string
   readonly photoUrl?: string
+  /** Left pending in the review queue instead of approved. Default false. */
+  readonly pending?: boolean
 }
 
 const profileFixture = (
@@ -97,20 +99,24 @@ const profileFixture = (
     radiusKm: 25,
     availability: 'weekday evenings, sunday afternoons',
     brief: overrides.brief ?? HYDROLOGY_BRIEF,
-    privateLayer: new PrivateLayer({
-      firstName,
-      phone: '+3548221234',
-      photoUrl: overrides.photoUrl,
-    }),
+    firstName,
+    photoUrl: overrides.photoUrl ?? `https://example.invalid/${firstName}.jpg`,
+    privateLayer: new PrivateLayer({ phone: '+3548221234' }),
   })
 
-/** Publishes a fixture and hands back the id the service issued. */
+/**
+ * Publishes a fixture and hands back the id the service issued. Approved
+ * unless the test says otherwise, since nobody pending is ever matched.
+ */
 const publishFixture = (firstName: string, overrides: ProfileOverrides = {}) =>
   Swipeless.pipe(
     Effect.flatMap((service) =>
       service.publish(profileFixture(firstName, overrides))
     ),
-    Effect.map((response) => response.profileId)
+    Effect.map((response) => response.profileId),
+    Effect.tap((profileId) =>
+      overrides.pending === true ? Effect.void : approve(profileId)
+    )
   )
 
 /** The pair table enforces profileAId < profileBId; respect it. */
@@ -120,7 +126,9 @@ const pairUp = (one: ProfileId, other: ProfileId) =>
       db.insert(setups).values({
         profileAId: one < other ? one : other,
         profileBId: one < other ? other : one,
-        status: 'interest_pending',
+        status: 'suggested',
+        interestedAAt: new Date('2026-09-10T12:00:00Z'),
+        date: { venue: { ...FAKE_DATE.venue }, time: FAKE_DATE.time },
         expiresAt: new Date('2027-01-01T00:00:00Z'),
       })
     )
@@ -184,6 +192,34 @@ describeDb('Swipeless service', () => {
           expect(photoObjects.has(key)).toBe(false)
         })
       )
+    })
+
+    test('holds a new profile for review, with name and photo stored apart from the phone', async () => {
+      const stored = await runtime.runPromise(
+        Effect.gen(function* () {
+          const service = yield* Swipeless
+          const db = yield* PgDrizzle.PgDrizzle
+          const published = yield* service.publish(profileFixture('Sigrún'))
+          return yield* db
+            .select({
+              reviewStatus: profiles.reviewStatus,
+              reviewedAt: profiles.reviewedAt,
+              firstName: profiles.firstName,
+              photoUrl: profiles.photoUrl,
+              phone: profiles.phone,
+            })
+            .from(profiles)
+            .where(eq(profiles.id, published.profileId))
+        })
+      )
+
+      expect(stored[0]).toEqual({
+        reviewStatus: 'pending',
+        reviewedAt: null,
+        firstName: 'Sigrún',
+        photoUrl: 'https://example.invalid/Sigrún.jpg',
+        phone: '+3548221234',
+      })
     })
 
     test('records a signup for the admin site with no personal data', async () => {
@@ -276,6 +312,95 @@ describeDb('Swipeless service', () => {
           'availability',
         ].sort()
       )
+    })
+
+    test('only ever returns approved profiles', async () => {
+      const result = await runtime.runPromise(
+        Effect.gen(function* () {
+          const caller = yield* publishFixture('Sigrún')
+          const approved = yield* publishFixture('Jón', {
+            gender: 'man',
+            interestedIn: ['woman'],
+          })
+          yield* publishFixture('Ari', {
+            gender: 'man',
+            interestedIn: ['woman'],
+            pending: true,
+          })
+          const rejected = yield* publishFixture('Einar', {
+            gender: 'man',
+            interestedIn: ['woman'],
+          })
+          const db = yield* PgDrizzle.PgDrizzle
+          yield* db
+            .update(profiles)
+            .set({ reviewStatus: 'rejected' })
+            .where(eq(profiles.id, rejected))
+
+          const response = yield* candidatesFor(caller)
+          return { approved, response }
+        })
+      )
+
+      expect(result.response.candidates.map((one) => one.profileId)).toEqual([
+        result.approved,
+      ])
+    })
+
+    test('gives a caller still waiting on review an empty list', async () => {
+      const result = await runtime.runPromise(
+        Effect.gen(function* () {
+          const caller = yield* publishFixture('Sigrún', { pending: true })
+          yield* publishFixture('Jón', {
+            gender: 'man',
+            interestedIn: ['woman'],
+          })
+          return yield* candidatesFor(caller)
+        })
+      )
+
+      expect(result.candidates).toEqual([])
+    })
+
+    test('an expired setup puts the pair back in play; a no keeps them apart', async () => {
+      const result = await runtime.runPromise(
+        Effect.gen(function* () {
+          const service = yield* Swipeless
+          const caller = yield* publishFixture('Sigrún')
+          const expiring = yield* publishFixture('Jón', {
+            gender: 'man',
+            interestedIn: ['woman'],
+          })
+          const declining = yield* publishFixture('Ari', {
+            gender: 'man',
+            interestedIn: ['woman'],
+            brief: CELLO_BRIEF,
+          })
+
+          yield* service.interest(
+            { profileId: caller },
+            new InterestRequest({ profileId: expiring })
+          )
+          const no = yield* service.interest(
+            { profileId: caller },
+            new InterestRequest({ profileId: declining })
+          )
+          yield* service.decline(
+            { profileId: caller },
+            new DeclineRequest({ setupId: no.setup.setupId })
+          )
+
+          const before = yield* candidatesFor(caller)
+          yield* TestClock.adjust(Duration.days(15))
+          const after = yield* candidatesFor(caller)
+          return { expiring, before, after }
+        }).pipe(Effect.provide(TestContext.TestContext))
+      )
+
+      expect(result.before.candidates).toEqual([])
+      expect(result.after.candidates.map((one) => one.profileId)).toEqual([
+        result.expiring,
+      ])
     })
 
     test('orders by brief similarity, best first', async () => {
@@ -373,98 +498,67 @@ describeDb('Swipeless service', () => {
    * returns, so a broken wiring cannot pass.
    */
   describe('the setup lifecycle', () => {
-    const SLOT = '2026-09-18T19:30:00Z'
-
-    test('carries a pair from interest to a confirmed date', async () => {
+    test('carries a pick to a confirmed date', async () => {
       const photoUrl =
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
       const result = await runtime.runPromise(
         Effect.gen(function* () {
           const service = yield* Swipeless
 
-          const one = yield* publishFixture('Sigrún', { photoUrl })
-          const two = yield* publishFixture('Jón', {
+          const sigrun = yield* publishFixture('Sigrún', { photoUrl })
+          const jon = yield* publishFixture('Jón', {
             photoUrl,
             gender: 'man',
             interestedIn: ['woman'],
           })
 
-          yield* service.interest(
-            { profileId: one },
-            new InterestRequest({ profileId: two })
+          const picked = yield* service.interest(
+            { profileId: sigrun },
+            new InterestRequest({ profileId: jon })
           )
-          const mutual = yield* service.interest(
-            { profileId: two },
-            new InterestRequest({ profileId: one })
-          )
+          const setupId = picked.setup.setupId
+          const jonBeforeYes = yield* service.setups({ profileId: jon })
 
-          // a is the smaller of the two ids, and a proposes first. Which
-          // fixture that is depends on the uuids postgres handed out, so the
-          // names travel with the roles rather than being assumed.
-          const oneIsA = one < two
-          const a = { profileId: oneIsA ? one : two }
-          const b = { profileId: oneIsA ? two : one }
-          const aName = oneIsA ? 'Sigrún' : 'Jón'
-          const bName = oneIsA ? 'Jón' : 'Sigrún'
-
-          const proposed = yield* service.propose(
-            a,
-            new ProposeRequest({
-              setupId: mutual.setupId,
-              proposal: new Proposal({
-                venue: new Venue({
-                  name: 'Kaffi Vest',
-                  address: 'Hagamelur 67, Reykjavík',
-                }),
-                slots: [SLOT],
-              }),
-            })
+          const requested = yield* service.confirm(
+            { profileId: sigrun },
+            new ConfirmRequest({ setupId })
           )
-
-          const firstConfirmation = yield* service.confirm(
-            a,
-            new ConfirmRequest({ setupId: mutual.setupId, slot: SLOT })
-          )
-          const beforeBothConfirm = yield* service.setups(b)
+          const jonAfterYes = yield* service.setups({ profileId: jon })
           const confirmed = yield* service.confirm(
-            b,
-            new ConfirmRequest({ setupId: mutual.setupId, slot: SLOT })
+            { profileId: jon },
+            new ConfirmRequest({ setupId })
           )
-
-          const listed = yield* service.setups(a)
+          const listed = yield* service.setups({ profileId: sigrun })
 
           return {
-            aName,
-            bName,
-            mutual,
-            proposed,
-            firstConfirmation,
-            beforeBothConfirm,
+            picked,
+            jonBeforeYes,
+            requested,
+            jonAfterYes,
             confirmed,
             listed,
           }
         })
       )
 
-      expect(result.mutual.status).toBe('mutual')
-      expect(result.proposed.status).toBe('proposed')
-      expect(result.firstConfirmation.privateLayer).toBeUndefined()
-      expect(
-        result.beforeBothConfirm.setups[0]?.counterpartPrivateLayer
-      ).toBeUndefined()
-      expect(result.confirmed.privateLayer?.photoUrl).toMatch(
+      expect(result.picked.setup.status).toBe('suggested')
+      expect(result.picked.setup.counterpart.firstName).toBe('Jón')
+      expect(result.picked.setup.counterpart.photoUrl).toMatch(
         /^https:\/\/photos.example\/api\/photos\/.*signature=/
       )
+      expect(result.picked.setup.date).toEqual(FAKE_DATE)
+      expect(result.jonBeforeYes.setups).toHaveLength(0)
+      expect(result.requested.status).toBe('requested')
+      expect(result.requested.privateLayer).toBeUndefined()
+      expect(result.jonAfterYes.setups[0]?.counterpart.firstName).toBe('Sigrún')
       expect(
-        result.listed.setups[0]?.counterpartPrivateLayer?.photoUrl
-      ).toMatch(/^https:\/\/photos.example\/api\/photos\/.*signature=/)
+        result.jonAfterYes.setups[0]?.counterpartPrivateLayer
+      ).toBeUndefined()
       expect(result.confirmed.status).toBe('confirmed')
-      // b confirms last, so b is handed a's private layer.
-      expect(result.confirmed.privateLayer?.firstName).toBe(result.aName)
-      expect(result.listed.setups).toHaveLength(1)
+      expect(result.confirmed.privateLayer?.phone).toBe('+3548221234')
       expect(result.listed.setups[0]?.status).toBe('confirmed')
-      expect(result.listed.setups[0]?.counterpartPrivateLayer?.firstName).toBe(
-        result.bName
+      expect(result.listed.setups[0]?.counterpartPrivateLayer?.phone).toBe(
+        '+3548221234'
       )
     })
 
@@ -473,26 +567,21 @@ describeDb('Swipeless service', () => {
         Effect.gen(function* () {
           const service = yield* Swipeless
 
-          const one = yield* publishFixture('Sigrún')
-          const two = yield* publishFixture('Jón', {
+          const sigrun = yield* publishFixture('Sigrún')
+          const jon = yield* publishFixture('Jón', {
             gender: 'man',
             interestedIn: ['woman'],
           })
 
-          yield* service.interest(
-            { profileId: one },
-            new InterestRequest({ profileId: two })
+          const picked = yield* service.interest(
+            { profileId: sigrun },
+            new InterestRequest({ profileId: jon })
           )
-          const mutual = yield* service.interest(
-            { profileId: two },
-            new InterestRequest({ profileId: one })
-          )
-
           const declined = yield* service.decline(
-            { profileId: one },
-            new DeclineRequest({ setupId: mutual.setupId })
+            { profileId: sigrun },
+            new DeclineRequest({ setupId: picked.setup.setupId })
           )
-          const listed = yield* service.setups({ profileId: two })
+          const listed = yield* service.setups({ profileId: sigrun })
 
           return { declined, listed }
         })

@@ -22,9 +22,6 @@ import {
   InterestRequest,
   InterestResponse,
   Profile,
-  ProposeError,
-  ProposeRequest,
-  ProposeResponse,
   PublishResponse,
   SetupsError,
   SetupsResponse,
@@ -78,12 +75,6 @@ const interest = HttpApiEndpoint.post('interest', '/interest')
   .addError(InterestError)
   .middleware(BearerAuth)
 
-const propose = HttpApiEndpoint.post('propose', '/propose')
-  .setPayload(ProposeRequest)
-  .addSuccess(ProposeResponse)
-  .addError(ProposeError)
-  .middleware(BearerAuth)
-
 const confirm = HttpApiEndpoint.post('confirm', '/confirm')
   .setPayload(ConfirmRequest)
   .addSuccess(ConfirmResponse)
@@ -111,7 +102,6 @@ export const SwipelessGroup = HttpApiGroup.make('swipeless')
   .add(publish)
   .add(candidates)
   .add(interest)
-  .add(propose)
   .add(confirm)
   .add(decline)
   .add(deleteProfile)

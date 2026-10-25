@@ -122,3 +122,55 @@ at the embedding step. swipeless now has its own key, stored in the `swipeless` 
 the `swipeless-api` project for production and development. Embeddings stay on OpenAI
 `text-embedding-3-small`. Rejected: switching embedding providers, and dropping embeddings for
 filter-only matching.
+
+## 2026-10-20: Aligned with the business case
+
+PRODUCT.md was realigned with "swipeless. 9 questions." in Notion. Rejected alternatives were
+not recorded at the time.
+
+- The note shows the other person's first name and photo. Only the phone number stays in the
+  private layer until both say yes. This reverses D4 of 2026-10-01.
+- A photo is required to publish. The phone number is required and confirmed by SMS code.
+- The service reaches humans directly by SMS and email, with small single-purpose pages for
+  anything that needs a tap. No browsing site, no login.
+- A person checks every profile before it goes live, including that they are 18+. This replaces
+  "no identity verification".
+- Iceland is the lab, recruited through a prompt inside Smitten. This replaces "no Smitten
+  branding anywhere"; whether swipeless carries Smitten's name stays open.
+- Post-date check-ins by SMS or email, and the one signal: at least 40% of people who went on a
+  date ask for another within 30 days.
+
+## 2026-10-23: One pick, a suggested date
+
+PRODUCT.md was realigned again with the same business case, which now wins where the two
+disagree. Rejected alternatives were not recorded at the time.
+
+- One agent's pick starts a setup. Mutual agent interest is no longer required. Rejected: the
+  founding mutual-interest flow.
+- swipeless suggests the date, a public place and a time. Agents no longer propose or counter,
+  and `swipeless_propose` is removed. This leaves seven tools. The question of whether the picked
+  person can ask for another time or place is open.
+- The picking human sees the note first. On their yes, the other person gets a date request by
+  SMS. Both must say yes.
+- Briefs are tailored to the person looking, and the full brief never leaves swipeless. This
+  needs a model on the service side and reverses "no server-side LLM".
+- Picking may use everything the agent knows about its human. The brief still comes only from
+  the interview.
+- Every no offers an optional one-tap reason on our page. The agent still never asks why.
+- Payment: free while testing, later $15 per confirmed date, paid through a link outside the chat.
+- Distribution's main bet is agents finding and suggesting swipeless on their own. The ChatGPT and
+  Claude directories and the link inside Smitten are the fallback.
+
+## 2026-10-23: Demo build of the pick flow
+
+Implementation choices for a demo of the 2026-10-23 flow. These are not PRODUCT.md changes.
+
+- Date suggestions come from a deterministic, rule-based `DateSuggester`: curated public venues
+  per city and the next Thursday evening or Saturday afternoon. A model replaces it later.
+- `Notifier` only logs. No SMS or email provider is chosen yet, so the picked person's agent sees
+  a date request the next time it runs `swipeless_setups`.
+- Candidates still carry the stored brief. Tailoring waits for the service-side model.
+- The photo still travels with publish, and the phone is not yet confirmed by SMS code. Both move
+  to a texted small page once pages exist.
+- Profiles start `pending`. The admin review queue approves or rejects them, and only approved
+  profiles are matched.

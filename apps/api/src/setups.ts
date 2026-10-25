@@ -9,34 +9,56 @@ import { PhotoLinks } from '@swipeless/photos'
 import {
   ConfirmResponse,
   Conflict,
+  Counterpart,
+  DateSuggestion,
   DeclineResponse,
   InterestResponse,
   NotFound,
   PrivateLayer,
   type ProfileId,
-  Proposal,
-  ProposeResponse,
   RateLimited,
   Setup,
   type SetupId,
-  type SetupRole,
   type SetupStatus,
   SetupsResponse,
 } from '@swipeless/shared'
-import { and, desc, eq, gt, inArray, or } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, not, or, sql } from 'drizzle-orm'
 import { Clock, Config, Effect, Schema } from 'effect'
+import { type DateParty, DateSuggester } from './date-suggester.ts'
+import { Notifier } from './notifier.ts'
 import type { AuthenticatedProfile } from './service.ts'
 
 /**
- * The setup: one row per pair, from the first one-way interest to the release
- * of the private layer.
+ * The setup: one row per pair, from an agent's pick to the release of the
+ * phone numbers.
  *
- * Everything that makes a setup a setup lives in here — the ordered pair and
- * the role it implies, the one-counter rule, the rule that a pending interest
- * is invisible to the side that has not reciprocated, the weekly cap, lazy
- * expiry, and the guarded write that keeps two concurrent calls from stepping
- * on each other. The adapters and `Swipeless` know none of it; they call the
- * five methods below.
+ * PRODUCT.md, The setup and the date, is the whole state machine:
+ *
+ *   pick ──▶ suggested ──yes──▶ requested ──yes──▶ confirmed
+ *               │                   │
+ *               └──── no ───────────┴──▶ declined        (final, both sides)
+ *               └──── 14 days, no transition ──▶ expired  (lazy, see below)
+ *               └──── the suggested time passes ──▶ expired
+ *
+ * - An agent's pick creates the setup with a date the `DateSuggester` makes
+ *   for both people. `suggested` is visible only to the side that picked:
+ *   "The picking human sees the note first, through their agent."
+ * - The first human's yes makes it `requested`: "If they say yes, the other
+ *   person gets a date request by SMS." From here both sides can see it, and
+ *   the `Notifier` tells the other one.
+ * - The second yes makes it `confirmed` and releases each side's phone number
+ *   to the other: "When both say yes, both get the other's phone number."
+ * - Either side may say no at any point before both said yes. "No is final",
+ *   and "A no closes the pair for good": the row stays, which is what keeps
+ *   the pair out of each other's candidates and makes a second pick NotFound.
+ * - Only a no closes a pair. An expired setup leaves the two free to meet
+ *   again: they come back as candidates, and a fresh pick replaces the
+ *   expired row with a new setup and a new date.
+ *
+ * Everything that makes a setup a setup lives in here — the ordered pair, who
+ * may see a row, the weekly ceiling on picks, lazy expiry, and the guarded
+ * write that keeps two concurrent calls from stepping on each other. The
+ * adapters and `Swipeless` know none of it; they call the five methods below.
  *
  * `AuthenticatedProfile` is imported as a type only. `service.ts` imports this
  * module for real, so a value import would close a module cycle and leave
@@ -46,16 +68,15 @@ import type { AuthenticatedProfile } from './service.ts'
 const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
- * How long a setup survives without a transition, refreshed on every
- * transition. PRODUCT.md fixes no number; fourteen days is this module's
- * assumption and the only place it is written down.
+ * PRODUCT.md: "A setup with no transition for fourteen days expires."
+ * Refreshed on every transition.
  *
  * Exported for this module's tests.
  */
 export const SETUP_TTL_MS = 14 * DAY_MS
 
 /**
- * The window the weekly interest cap counts over.
+ * The window the weekly ceiling on picks counts over.
  *
  * Exported for this module's tests.
  */
@@ -69,7 +90,13 @@ export const INTEREST_WINDOW_MS = 7 * DAY_MS
  */
 const PROFILE_TTL_MS = PROFILE_TTL_DAYS * DAY_MS
 
-/** Statuses that no longer age out: expiry has nothing left to say about them. */
+/** One side of the ordered pair. Internal: the contract speaks of "you". */
+type Side = 'a' | 'b'
+
+/**
+ * Statuses that no longer age out. PRODUCT.md: "A confirmed setup does not
+ * expire", and a declined or expired one has nothing left to wait for.
+ */
 const SETTLED: ReadonlySet<SetupStatus> = new Set<SetupStatus>([
   'confirmed',
   'declined',
@@ -77,51 +104,72 @@ const SETTLED: ReadonlySet<SetupStatus> = new Set<SetupStatus>([
 ])
 
 /**
- * The window in which either side may still say no: from mutual interest up
- * to the moment a date is settled. A one-way interest is not in it — there is
- * nothing to decline that the other side knows about — and neither is
- * anything already settled.
+ * Still waiting on a human. A pick can join one of these, and either side may
+ * say no to one: "Either human may say no at any point before both have said
+ * yes."
  */
-const DECLINABLE: ReadonlySet<SetupStatus> = new Set<SetupStatus>([
-  'mutual',
-  'proposed',
-  'countered',
-])
+const OPEN = [
+  'suggested',
+  'requested',
+] as const satisfies ReadonlyArray<SetupStatus>
+const isOpen = (status: SetupStatus): boolean =>
+  (OPEN as ReadonlyArray<SetupStatus>).includes(status)
 
 /**
  * The status the outside world sees. Expiry is lazy: no job walks the table,
- * so a row whose `expiresAt` has passed reads as `expired` from here on and
- * every operation answers from this, never from the stored column.
+ * so a row reads as `expired` from the moment it has gone fourteen days
+ * without a transition, or the suggested time has come and gone without
+ * both yeses — a date in the past is not a date anyone can still say yes
+ * to. Every operation answers from this, never from the stored column.
+ *
+ * Exported for `Swipeless.candidates`, which lets expired pairs meet again.
  */
-const effectiveStatus = (row: SetupRow, at: number): SetupStatus =>
+export const effectiveStatus = (
+  row: Pick<SetupRow, 'status' | 'expiresAt' | 'date'>,
+  at: number
+): SetupStatus =>
   SETTLED.has(row.status)
     ? row.status
-    : row.expiresAt.getTime() <= at
+    : row.expiresAt.getTime() <= at || Date.parse(row.date.time) <= at
       ? 'expired'
       : row.status
 
+/**
+ * The same rule in SQL, for guarded writes: the row has neither aged out nor
+ * passed its suggested time. Stored date times are ISO-8601 instants.
+ */
+const liveAt = (at: number) =>
+  sql`(${setups.expiresAt} > ${new Date(at)} and (${setups.date}->>'time')::timestamptz > ${new Date(at)})`
+
 /** The caller's side of the ordered pair, or null if they are not in it. */
-const roleIn = (row: SetupRow, profileId: ProfileId): SetupRole | null =>
+const sideIn = (row: SetupRow, profileId: ProfileId): Side | null =>
   row.profileAId === profileId ? 'a' : row.profileBId === profileId ? 'b' : null
 
+const other = (side: Side): Side => (side === 'a' ? 'b' : 'a')
+
+const pickedBy = (row: SetupRow, side: Side): boolean =>
+  (side === 'a' ? row.interestedAAt : row.interestedBAt) !== null
+
+const confirmedBy = (row: SetupRow, side: Side): boolean =>
+  side === 'a' ? row.confirmedA : row.confirmedB
+
+const profileOf = (row: SetupRow, side: Side): ProfileId =>
+  side === 'a' ? row.profileAId : row.profileBId
+
+const counterpartIdOf = (row: SetupRow, side: Side): ProfileId =>
+  profileOf(row, other(side))
+
 /**
- * PRODUCT.md, Vocabulary: interest is "invisible to the other side until
- * mutual". A pending row therefore exists only for the side that expressed it.
+ * PRODUCT.md: "Interest stays hidden until both say yes, so nobody ever sees
+ * a no." A side sees a setup once its own agent picked, or once a human said
+ * yes, which is what turned it into a date request. A row that was declined
+ * or expired stays visible to exactly the sides that could see it before. On
+ * a `suggested` row that is the side or sides whose agent picked: a no there
+ * reaches the other side only if its agent had picked too, and then it learns
+ * only that the date is not happening.
  */
-const visibleTo = (row: SetupRow, role: SetupRole): boolean =>
-  row.status !== 'interest_pending' ||
-  (role === 'a' ? row.interestedAAt !== null : row.interestedBAt !== null)
-
-const interestOf = (row: SetupRow, role: SetupRole): Date | null =>
-  role === 'a' ? row.interestedAAt : row.interestedBAt
-
-const confirmedBy = (row: SetupRow, role: SetupRole): boolean =>
-  role === 'a' ? row.confirmedA : row.confirmedB
-
-const other = (role: SetupRole): SetupRole => (role === 'a' ? 'b' : 'a')
-
-const counterpartOf = (row: SetupRow, role: SetupRole): ProfileId =>
-  role === 'a' ? row.profileBId : row.profileAId
+const visibleTo = (row: SetupRow, side: Side): boolean =>
+  pickedBy(row, side) || row.confirmedA || row.confirmedB
 
 /**
  * The ordered pair for two profiles. The unique key and the check constraint
@@ -134,28 +182,17 @@ const pairOf = (
 ): {
   readonly aId: ProfileId
   readonly bId: ProfileId
-  readonly role: SetupRole
+  readonly side: Side
 } => {
   const caller = callerId.toLowerCase()
   const target = targetId.toLowerCase()
   return caller < target
-    ? { aId: caller, bId: target, role: 'a' }
-    : { aId: target, bId: caller, role: 'b' }
+    ? { aId: caller, bId: target, side: 'a' }
+    : { aId: target, bId: caller, side: 'b' }
 }
 
-/**
- * `confirmedSlot` is a timestamptz and the contract's `Timestamp` is an ISO
- * string, so slots are compared as instants. Two spellings of one moment are
- * the same slot; an unparseable one matches nothing.
- */
-const instant = (timestamp: string): number => Date.parse(timestamp)
-
-const sameInstant = (slot: string, stored: Date | null): boolean =>
-  stored !== null &&
-  Number.isFinite(instant(slot)) &&
-  instant(slot) === stored.getTime()
-
-const decodeProposal = Schema.decodeUnknown(Proposal)
+const decodeDate = Schema.decodeUnknown(DateSuggestion)
+const encodeDate = Schema.encodeSync(DateSuggestion)
 
 /**
  * A database failure is not something an agent can act on, so it is a defect
@@ -166,6 +203,16 @@ const query = <A, E, R>(
   effect: Effect.Effect<A, E, R>
 ): Effect.Effect<A, never, R> => Effect.orDie(effect)
 
+/** What the note and the private layer need from a counterpart's profile. */
+type Person = {
+  readonly id: ProfileId
+  readonly firstName: string
+  readonly age: number
+  readonly photoUrl: string | null
+  readonly phone: string
+  readonly brief: string
+}
+
 export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
   'SetupLifecycle',
   {
@@ -173,11 +220,13 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
     effect: Effect.gen(function* () {
       const db = yield* PgDrizzle.PgDrizzle
       const photoLinks = yield* PhotoLinks
+      const suggester = yield* DateSuggester
+      const notifier = yield* Notifier
 
       /**
-       * PRODUCT.md: "A weekly cap on interests applies, default to be set in
-       * the skill." Read once: a misconfigured cap is a deploy problem, not a
-       * per-call one.
+       * PRODUCT.md: "The service enforces a separate ceiling, twenty per
+       * week, whatever the skill says." Read once: a misconfigured ceiling is
+       * a deploy problem, not a per-call one.
        */
       const weeklyCap = yield* Config.integer('INTEREST_WEEKLY_CAP').pipe(
         Config.withDefault(20),
@@ -199,31 +248,31 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
         ).pipe(Effect.map((rows) => rows[0]))
 
       /**
-       * The row as this caller may see it. A setup they are not part of, and a
-       * pending interest they did not express, are both simply absent: the
-       * counterpart must not be able to tell the two apart.
+       * The row as this caller may see it. A setup they are not part of, and
+       * one they cannot see yet, are both simply absent: the other side must
+       * not be able to tell the two apart.
        */
       const visibleRow = (
         caller: AuthenticatedProfile,
         setupId: SetupId
       ): Effect.Effect<
-        { readonly row: SetupRow; readonly role: SetupRole },
+        { readonly row: SetupRow; readonly side: Side },
         NotFound
       > =>
         Effect.gen(function* () {
           const row = yield* rowById(setupId)
           if (row === undefined) return yield* new NotFound()
-          const role = roleIn(row, caller.profileId)
-          if (role === null || !visibleTo(row, role)) {
+          const side = sideIn(row, caller.profileId)
+          if (side === null || !visibleTo(row, side)) {
             return yield* new NotFound()
           }
-          return { row, role }
+          return { row, side }
         })
 
       /**
-       * A guarded write touched nothing, so somebody else moved the row first.
-       * Re-read and answer with what is true now rather than with what was
-       * true when this call started.
+       * A guarded write touched nothing twice, so somebody else keeps moving
+       * the row. Re-read and answer with what is true now rather than with
+       * what was true when this call started.
        */
       const staleConflict = (
         caller: AuthenticatedProfile,
@@ -235,15 +284,8 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
           return yield* new Conflict({ status: effectiveStatus(row, at) })
         })
 
-      const guarded = (
-        caller: AuthenticatedProfile,
-        setupId: SetupId,
-        touched: number
-      ): Effect.Effect<void, NotFound | Conflict> =>
-        touched > 0 ? Effect.void : staleConflict(caller, setupId)
-
       /**
-       * The cap counts the interests this caller expressed inside the window,
+       * The ceiling counts the picks this caller made inside the window,
        * whichever side of the pair they are on. `retryAfterSeconds` is the
        * wait until the oldest of them falls out of it.
        */
@@ -276,7 +318,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
               )
           )
 
-          const expressed = rows
+          const picked = rows
             .map((row) =>
               row.profileAId === callerId
                 ? row.interestedAAt
@@ -285,9 +327,9 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             .filter((when): when is Date => when !== null)
             .map((when) => when.getTime())
 
-          if (expressed.length < weeklyCap) return
+          if (picked.length < weeklyCap) return
 
-          const oldest = Math.min(...expressed)
+          const oldest = Math.min(...picked)
           const retryAfterSeconds = Math.max(
             1,
             Math.ceil((oldest + INTEREST_WINDOW_MS - at) / 1000)
@@ -295,147 +337,239 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
           return yield* new RateLimited({ retryAfterSeconds })
         })
 
-      const privateLayerOf = (profileId: ProfileId) =>
+      /** The people behind a set of counterpart ids, by id. */
+      const peopleById = (ids: ReadonlyArray<ProfileId>) =>
         Effect.gen(function* () {
+          const people = new Map<ProfileId, Person>()
+          if (ids.length === 0) return people
           const rows = yield* query(
             db
               .select({
+                id: profiles.id,
                 firstName: profiles.firstName,
-                phone: profiles.phone,
+                age: profiles.age,
                 photoUrl: profiles.photoUrl,
+                phone: profiles.phone,
+                brief: profiles.brief,
               })
               .from(profiles)
-              .where(eq(profiles.id, profileId))
-              .limit(1)
+              .where(inArray(profiles.id, [...new Set(ids)]))
           )
-          const row = rows[0]
-          if (row === undefined) {
-            // The cascade takes setups with the profile, so a confirmed setup
-            // whose counterpart is gone cannot exist.
-            return yield* Effect.dieMessage(
-              'confirmed setup has no counterpart profile'
-            )
-          }
-          return new PrivateLayer({
-            firstName: row.firstName,
-            phone: row.phone,
-            ...(row.photoUrl === null
-              ? {}
-              : { photoUrl: yield* photoLinks.url(row.photoUrl, profileId) }),
-          })
+          for (const row of rows) people.set(row.id, row)
+          return people
         })
 
-      /** Stored jsonb comes back as a plain object; the contract wants a class. */
-      const readProposal = (value: Proposal | null) =>
-        value === null
-          ? Effect.succeed(null)
-          : decodeProposal(value).pipe(Effect.orDie)
+      /**
+       * PRODUCT.md, Vocabulary: the note shows "first name, photo, age". The
+       * photo link is signed and short-lived; a profile from before photos
+       * were required has none, and the note says so with an empty string.
+       */
+      const counterpartNote = (person: Person) =>
+        Effect.gen(function* () {
+          return new Counterpart({
+            profileId: person.id,
+            firstName: person.firstName,
+            age: person.age,
+            brief: person.brief,
+            photoUrl:
+              person.photoUrl === null
+                ? ''
+                : yield* photoLinks.url(person.photoUrl, person.id),
+          })
+        })
 
       /**
        * The caller's view of one row. `youConfirmed` is the caller's flag
        * only: PRODUCT.md does not let either side watch the other decide.
+       * The phone number travels only on a confirmed setup.
        */
       const toSetup = (
         row: SetupRow,
-        role: SetupRole,
+        side: Side,
         at: number,
-        privateLayer: PrivateLayer | undefined
+        people: ReadonlyMap<ProfileId, Person>
       ) =>
         Effect.gen(function* () {
-          const proposal = yield* readProposal(row.proposal)
-          const counter = yield* readProposal(row.counter)
+          const person = people.get(counterpartIdOf(row, side))
+          if (person === undefined) {
+            // The cascade takes setups with the profile, so a setup whose
+            // counterpart is gone cannot exist.
+            return yield* Effect.dieMessage('setup has no counterpart profile')
+          }
+          const status = effectiveStatus(row, at)
+          const date = yield* decodeDate(row.date).pipe(Effect.orDie)
 
           return new Setup({
             setupId: row.id,
-            counterpartProfileId: counterpartOf(row, role),
-            role,
-            status: effectiveStatus(row, at),
-            proposal,
-            counter,
-            confirmedSlot:
-              row.confirmedSlot === null
-                ? null
-                : row.confirmedSlot.toISOString(),
-            youConfirmed: confirmedBy(row, role),
-            ...(privateLayer === undefined
-              ? {}
-              : { counterpartPrivateLayer: privateLayer }),
+            counterpart: yield* counterpartNote(person),
+            status,
+            date,
+            youPicked: pickedBy(row, side),
+            youConfirmed: confirmedBy(row, side),
+            ...(status === 'confirmed'
+              ? {
+                  counterpartPrivateLayer: new PrivateLayer({
+                    phone: person.phone,
+                  }),
+                }
+              : {}),
             createdAt: row.createdAt.toISOString(),
             updatedAt: row.updatedAt.toISOString(),
             expiresAt: row.expiresAt.toISOString(),
           })
         })
 
+      const viewOf = (row: SetupRow, side: Side, at: number) =>
+        Effect.flatMap(peopleById([counterpartIdOf(row, side)]), (people) =>
+          toSetup(row, side, at, people)
+        )
+
       /**
-       * Record this caller's interest on a row that already exists. Returns
-       * the status the caller should be told about, which is the current one
-       * whenever there is nothing to record.
+       * The pick lands on a pair whose row is not expired. Repeating a pick is
+       * free; picking someone whose agent already picked you joins their
+       * setup, spends a pick, restarts its fourteen days, and leaves both
+       * humans still owing a yes. A declined pair stays closed.
        */
       const joinExisting = (
         caller: AuthenticatedProfile,
         row: SetupRow,
-        role: SetupRole,
-        at: number
-      ): Effect.Effect<InterestResponse, RateLimited> =>
+        side: Side,
+        at: number,
+        retried = false
+      ): Effect.Effect<InterestResponse, NotFound | RateLimited> =>
         Effect.gen(function* () {
           const status = effectiveStatus(row, at)
 
-          // Already interested: idempotent, and it does not spend cap.
-          if (interestOf(row, role) !== null) {
-            return new InterestResponse({ setupId: row.id, status })
+          // "A no closes the pair for good: they are never shown to each
+          // other again." An expired row is replaced before it gets here;
+          // one that expired mid-call is not joined either.
+          if (status === 'declined' || status === 'expired') {
+            return yield* new NotFound()
           }
-          // Anything past the pending stage, expiry included, is unchanged by
-          // a fresh interest.
-          if (status !== 'interest_pending') {
-            return new InterestResponse({ setupId: row.id, status })
+
+          if (pickedBy(row, side) || !isOpen(status)) {
+            if (!visibleTo(row, side)) return yield* new NotFound()
+            return new InterestResponse({ setup: yield* viewOf(row, side, at) })
           }
 
           yield* enforceCap(caller.profileId, at)
-
-          const reciprocated = interestOf(row, other(role)) !== null
-          const next: SetupStatus = reciprocated ? 'mutual' : 'interest_pending'
 
           const updated = yield* query(
             db
               .update(setups)
               .set({
-                ...(role === 'a'
+                ...(side === 'a'
                   ? { interestedAAt: new Date(at) }
                   : { interestedBAt: new Date(at) }),
-                status: next,
                 updatedAt: new Date(at),
                 expiresAt: new Date(at + SETUP_TTL_MS),
               })
               .where(
                 and(
                   eq(setups.id, row.id),
-                  eq(setups.status, 'interest_pending')
+                  inArray(setups.status, [...OPEN]),
+                  liveAt(at),
+                  side === 'a'
+                    ? isNull(setups.interestedAAt)
+                    : isNull(setups.interestedBAt)
                 )
               )
-              .returning({ status: setups.status })
+              .returning()
           )
 
           const written = updated[0]
           if (written !== undefined) {
             return new InterestResponse({
-              setupId: row.id,
-              status: written.status,
+              setup: yield* viewOf(written, side, at),
             })
           }
 
           // Someone moved the row underneath us. Interest declares no
-          // Conflict, so answer with the truth: where the setup stands now.
+          // Conflict, so answer from where the setup stands now.
           const fresh = yield* rowById(row.id)
-          return new InterestResponse({
-            setupId: row.id,
-            status: fresh === undefined ? status : effectiveStatus(fresh, at),
-          })
+          if (fresh === undefined || retried) return yield* new NotFound()
+          return yield* joinExisting(caller, fresh, side, at, true)
+        })
+
+      /**
+       * One human's yes. Returns undefined when the guarded write lost a race,
+       * so `confirm` can look again.
+       */
+      const confirmOnce = (
+        caller: AuthenticatedProfile,
+        setupId: SetupId
+      ): Effect.Effect<ConfirmResponse | undefined, NotFound | Conflict> =>
+        Effect.gen(function* () {
+          const { row, side } = yield* visibleRow(caller, setupId)
+          const at = yield* Clock.currentTimeMillis
+          const status = effectiveStatus(row, at)
+          const counterpartId = counterpartIdOf(row, side)
+
+          // "When both say yes, both get the other's phone number."
+          const released = () =>
+            Effect.gen(function* () {
+              const people = yield* peopleById([counterpartId])
+              const person = people.get(counterpartId)
+              if (person === undefined) {
+                return yield* Effect.dieMessage(
+                  'confirmed setup has no counterpart profile'
+                )
+              }
+              return new ConfirmResponse({
+                status: 'confirmed',
+                privateLayer: new PrivateLayer({ phone: person.phone }),
+              })
+            })
+
+          // Saying yes twice is the same yes.
+          if (status === 'confirmed') return yield* released()
+          if (!isOpen(status)) return yield* new Conflict({ status })
+          if (confirmedBy(row, side)) return new ConfirmResponse({ status })
+
+          const otherSaidYes = confirmedBy(row, other(side))
+          const mine =
+            side === 'a' ? { confirmedA: true } : { confirmedB: true }
+          const theirs =
+            side === 'a'
+              ? eq(setups.confirmedB, otherSaidYes)
+              : eq(setups.confirmedA, otherSaidYes)
+
+          const updated = yield* query(
+            db
+              .update(setups)
+              .set({
+                ...mine,
+                status: otherSaidYes ? 'confirmed' : 'requested',
+                updatedAt: new Date(at),
+                expiresAt: new Date(at + SETUP_TTL_MS),
+              })
+              .where(
+                and(
+                  eq(setups.id, row.id),
+                  eq(setups.status, status),
+                  liveAt(at),
+                  theirs
+                )
+              )
+              .returning({ id: setups.id })
+          )
+          if (updated.length === 0) return undefined
+
+          if (otherSaidYes) {
+            yield* notifier.dateConfirmed(profileOf(row, side), row.id)
+            yield* notifier.dateConfirmed(counterpartId, row.id)
+            return yield* released()
+          }
+
+          yield* notifier.dateRequested(counterpartId, row.id)
+          return new ConfirmResponse({ status: 'requested' })
         })
 
       return {
         /**
-         * One agent saying yes to another brief. The second yes on the same
-         * pair is what makes a setup.
+         * The agent's pick. Creates the setup with a date made for both, or
+         * joins the one the other side's agent already started. Answers with
+         * the caller's view of the setup, so the agent can show the note.
          */
         expressInterest: (
           caller: AuthenticatedProfile,
@@ -451,30 +585,88 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             const at = yield* Clock.currentTimeMillis
             const activeSince = new Date(at - PROFILE_TTL_MS)
 
-            // An expired profile is as good as missing: it is not in the pool
-            // and its agent is not listening.
-            const targets = yield* query(
+            const found = yield* query(
               db
-                .select({ id: profiles.id })
+                .select({
+                  id: profiles.id,
+                  reviewStatus: profiles.reviewStatus,
+                  lastSeenAt: profiles.lastSeenAt,
+                  city: profiles.city,
+                  country: profiles.country,
+                  availability: profiles.availability,
+                })
                 .from(profiles)
                 .where(
-                  and(
-                    eq(profiles.id, targetProfileId),
-                    gt(profiles.lastSeenAt, activeSince)
-                  )
+                  inArray(profiles.id, [caller.profileId, targetProfileId])
                 )
-                .limit(1)
             )
-            if (targets[0] === undefined) return yield* new NotFound()
+            const me = found.find((one) => one.id === caller.profileId)
+            const them = found.find(
+              (one) => one.id.toLowerCase() === targetProfileId.toLowerCase()
+            )
 
-            const { aId, bId, role } = pairOf(caller.profileId, targetProfileId)
+            // PRODUCT.md, Identity: "A person checks every profile before it
+            // goes live." Neither side is in the pool until approved, and an
+            // expired profile is as good as missing: its agent is not
+            // listening.
+            if (me === undefined || me.reviewStatus !== 'approved') {
+              return yield* new NotFound()
+            }
+            if (
+              them === undefined ||
+              them.reviewStatus !== 'approved' ||
+              them.lastSeenAt.getTime() <= activeSince.getTime()
+            ) {
+              return yield* new NotFound()
+            }
+
+            const { aId, bId, side } = pairOf(caller.profileId, them.id)
 
             const existing = yield* rowByPair(aId, bId)
-            if (existing !== undefined) {
-              return yield* joinExisting(caller, existing, role, at)
+            if (
+              existing !== undefined &&
+              effectiveStatus(existing, at) !== 'expired'
+            ) {
+              return yield* joinExisting(caller, existing, side, at)
             }
 
             yield* enforceCap(caller.profileId, at)
+
+            if (existing !== undefined) {
+              // Only a no closes a pair for good. An expired setup is
+              // history: delete it, guarded on it still being expired, and
+              // start a fresh one with a new id and a new date below.
+              const removed = yield* query(
+                db
+                  .delete(setups)
+                  .where(
+                    and(
+                      eq(setups.id, existing.id),
+                      inArray(setups.status, [...OPEN, 'expired']),
+                      or(eq(setups.status, 'expired'), not(liveAt(at)))
+                    )
+                  )
+                  .returning({ id: setups.id })
+              )
+              if (removed.length === 0) {
+                // Someone restarted or settled it first; answer from that.
+                const fresh = yield* rowByPair(aId, bId)
+                if (fresh !== undefined) {
+                  return yield* joinExisting(caller, fresh, side, at)
+                }
+              }
+            }
+
+            const party = (one: typeof me): DateParty => ({
+              profileId: one.id,
+              city: one.city,
+              country: one.country,
+              availability: one.availability,
+            })
+            const date = yield* suggester.suggest({
+              a: party(me),
+              b: party(them),
+            })
 
             const inserted = yield* query(
               db
@@ -482,9 +674,10 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 .values({
                   profileAId: aId,
                   profileBId: bId,
-                  status: 'interest_pending',
-                  interestedAAt: role === 'a' ? new Date(at) : null,
-                  interestedBAt: role === 'b' ? new Date(at) : null,
+                  status: 'suggested',
+                  interestedAAt: side === 'a' ? new Date(at) : null,
+                  interestedBAt: side === 'b' ? new Date(at) : null,
+                  date: encodeDate(date),
                   createdAt: new Date(at),
                   updatedAt: new Date(at),
                   expiresAt: new Date(at + SETUP_TTL_MS),
@@ -492,18 +685,17 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 .onConflictDoNothing({
                   target: [setups.profileAId, setups.profileBId],
                 })
-                .returning({ id: setups.id })
+                .returning()
             )
 
             const created = inserted[0]
             if (created !== undefined) {
               return new InterestResponse({
-                setupId: created.id,
-                status: 'interest_pending',
+                setup: yield* viewOf(created, side, at),
               })
             }
 
-            // The counterpart inserted the same pair between the read and the
+            // The other side picked the same pair between the read and the
             // insert. Their row is the row; join it.
             const raced = yield* rowByPair(aId, bId)
             if (raced === undefined) {
@@ -511,177 +703,32 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 'setup insert conflicted with a row that is not there'
               )
             }
-            return yield* joinExisting(caller, raced, role, at)
+            return yield* joinExisting(caller, raced, side, at)
           }),
 
         /**
-         * A venue and up to three slots. `a` proposes; `b` may counter once,
-         * which is the whole of PRODUCT.md's "The other agent may counter
-         * once".
-         */
-        propose: (
-          caller: AuthenticatedProfile,
-          setupId: SetupId,
-          proposal: Proposal
-        ): Effect.Effect<ProposeResponse, NotFound | Conflict> =>
-          Effect.gen(function* () {
-            const { row, role } = yield* visibleRow(caller, setupId)
-            const at = yield* Clock.currentTimeMillis
-            const status = effectiveStatus(row, at)
-
-            if (role === 'a' && status === 'mutual') {
-              const updated = yield* query(
-                db
-                  .update(setups)
-                  .set({
-                    proposal,
-                    status: 'proposed',
-                    updatedAt: new Date(at),
-                    expiresAt: new Date(at + SETUP_TTL_MS),
-                  })
-                  .where(
-                    and(eq(setups.id, row.id), eq(setups.status, 'mutual'))
-                  )
-                  .returning({ id: setups.id })
-              )
-              yield* guarded(caller, setupId, updated.length)
-              return new ProposeResponse({ status: 'proposed' })
-            }
-
-            if (role === 'b' && status === 'proposed') {
-              const updated = yield* query(
-                db
-                  .update(setups)
-                  .set({
-                    counter: proposal,
-                    status: 'countered',
-                    // The counter replaces what was on the table, so any
-                    // confirmation of the old slots goes with it.
-                    confirmedSlot: null,
-                    confirmedA: false,
-                    confirmedB: false,
-                    updatedAt: new Date(at),
-                    expiresAt: new Date(at + SETUP_TTL_MS),
-                  })
-                  .where(
-                    and(eq(setups.id, row.id), eq(setups.status, 'proposed'))
-                  )
-                  .returning({ id: setups.id })
-              )
-              yield* guarded(caller, setupId, updated.length)
-              return new ProposeResponse({ status: 'countered' })
-            }
-
-            return yield* new Conflict({ status })
-          }),
-
-        /**
-         * Both humans confirm the same slot or there is no date. Until the
-         * counterpart confirms, a caller may move their own answer.
+         * The caller's human says yes to the suggested date. The first yes
+         * sends the date request to the other side; the second confirms the
+         * date and releases the other's phone number.
          */
         confirm: (
           caller: AuthenticatedProfile,
-          setupId: SetupId,
-          slot: string
+          setupId: SetupId
         ): Effect.Effect<ConfirmResponse, NotFound | Conflict> =>
           Effect.gen(function* () {
-            const { row, role } = yield* visibleRow(caller, setupId)
-            const at = yield* Clock.currentTimeMillis
-            const status = effectiveStatus(row, at)
-
-            if (status !== 'proposed' && status !== 'countered') {
-              return yield* new Conflict({ status })
-            }
-
-            const active = status === 'countered' ? row.counter : row.proposal
-            if (active === null) {
-              return yield* Effect.dieMessage(
-                'setup is proposed or countered with nothing on the table'
-              )
-            }
-            const offered = active.slots.some(
-              (candidate) =>
-                Number.isFinite(instant(slot)) &&
-                instant(candidate) === instant(slot)
-            )
-            if (!offered) return yield* new Conflict({ status })
-
-            const counterpartConfirmed = confirmedBy(row, other(role))
-
-            if (counterpartConfirmed && !sameInstant(slot, row.confirmedSlot)) {
-              // They already said a different evening. One proposal at a time:
-              // this one is settled by countering, not by insisting.
-              return yield* new Conflict({ status })
-            }
-
-            const chosen = new Date(instant(slot))
-
-            if (counterpartConfirmed) {
-              const updated = yield* query(
-                db
-                  .update(setups)
-                  .set({
-                    ...(role === 'a'
-                      ? { confirmedA: true }
-                      : { confirmedB: true }),
-                    confirmedSlot: chosen,
-                    status: 'confirmed',
-                    updatedAt: new Date(at),
-                    expiresAt: new Date(at + SETUP_TTL_MS),
-                  })
-                  .where(
-                    and(
-                      eq(setups.id, row.id),
-                      eq(setups.status, status),
-                      eq(setups.confirmedSlot, chosen),
-                      role === 'a'
-                        ? eq(setups.confirmedB, true)
-                        : eq(setups.confirmedA, true)
-                    )
-                  )
-                  .returning({ id: setups.id })
-              )
-              yield* guarded(caller, setupId, updated.length)
-
-              const privateLayer = yield* privateLayerOf(
-                counterpartOf(row, role)
-              )
-              return new ConfirmResponse({ status: 'confirmed', privateLayer })
-            }
-
-            const updated = yield* query(
-              db
-                .update(setups)
-                .set({
-                  ...(role === 'a'
-                    ? { confirmedA: true }
-                    : { confirmedB: true }),
-                  confirmedSlot: chosen,
-                  updatedAt: new Date(at),
-                  expiresAt: new Date(at + SETUP_TTL_MS),
-                })
-                .where(
-                  and(
-                    eq(setups.id, row.id),
-                    eq(setups.status, status),
-                    // If they confirmed while we were deciding, this is no
-                    // longer a free choice: lose the race and re-read.
-                    role === 'a'
-                      ? eq(setups.confirmedB, false)
-                      : eq(setups.confirmedA, false)
-                  )
-                )
-                .returning({ id: setups.id })
-            )
-            yield* guarded(caller, setupId, updated.length)
-
-            return new ConfirmResponse({ status })
+            // Two yeses can cross: both read the row before either wrote. The
+            // loser of the guard looks once more and sees the other's yes.
+            const first = yield* confirmOnce(caller, setupId)
+            if (first !== undefined) return first
+            const second = yield* confirmOnce(caller, setupId)
+            if (second !== undefined) return second
+            return yield* staleConflict(caller, setupId)
           }),
 
         /**
          * Either side ends the setup. PRODUCT.md, Voice: "No is always
-         * enough. Never ask why." — nothing is carried but the setup id, and
-         * the counterpart is told the status and not one word more.
+         * enough." — nothing is carried but the setup id, and the other side
+         * is told the status and not one word more.
          *
          * Final. `declined` is settled, so the row never expires and nothing
          * revives it; it stays in the table, which is what keeps the pair out
@@ -697,11 +744,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             const at = yield* Clock.currentTimeMillis
             const status = effectiveStatus(row, at)
 
-            // A pending interest is the caller's own yes, and PRODUCT.md gives
-            // no way to take one back; the rest is already settled.
-            if (!DECLINABLE.has(status)) {
-              return yield* new Conflict({ status })
-            }
+            if (!isOpen(status)) return yield* new Conflict({ status })
 
             const updated = yield* query(
               db
@@ -710,12 +753,15 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 .where(
                   and(
                     eq(setups.id, row.id),
-                    inArray(setups.status, [...DECLINABLE])
+                    inArray(setups.status, [...OPEN]),
+                    liveAt(at)
                   )
                 )
                 .returning({ id: setups.id })
             )
-            yield* guarded(caller, setupId, updated.length)
+            if (updated.length === 0) {
+              return yield* staleConflict(caller, setupId)
+            }
 
             return new DeclineResponse({ status: 'declined' })
           }),
@@ -740,59 +786,21 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 .orderBy(desc(setups.createdAt), desc(setups.id))
             )
 
-            const mine: Array<{
-              readonly row: SetupRow
-              readonly role: SetupRole
-            }> = []
+            const mine: Array<{ readonly row: SetupRow; readonly side: Side }> =
+              []
             for (const row of rows) {
-              const role = roleIn(row, caller.profileId)
-              if (role !== null && visibleTo(row, role)) {
-                mine.push({ row, role })
-              }
+              const side = sideIn(row, caller.profileId)
+              if (side !== null && visibleTo(row, side))
+                mine.push({ row, side })
             }
 
-            // The private layer is released at a confirmed date and nowhere
-            // else. Listing setups is how an agent recovers it afterwards.
-            const releasedTo = mine
-              .filter(({ row }) => effectiveStatus(row, at) === 'confirmed')
-              .map(({ row, role }) => counterpartOf(row, role))
-
-            const layers = new Map<ProfileId, PrivateLayer>()
-            if (releasedTo.length > 0) {
-              const rows = yield* query(
-                db
-                  .select({
-                    id: profiles.id,
-                    firstName: profiles.firstName,
-                    phone: profiles.phone,
-                    photoUrl: profiles.photoUrl,
-                  })
-                  .from(profiles)
-                  .where(inArray(profiles.id, releasedTo))
-              )
-              for (const row of rows) {
-                layers.set(
-                  row.id,
-                  new PrivateLayer({
-                    firstName: row.firstName,
-                    phone: row.phone,
-                    ...(row.photoUrl === null
-                      ? {}
-                      : {
-                          photoUrl: yield* photoLinks.url(row.photoUrl, row.id),
-                        }),
-                  })
-                )
-              }
-            }
+            const people = yield* peopleById(
+              mine.map(({ row, side }) => counterpartIdOf(row, side))
+            )
 
             const result: Array<Setup> = []
-            for (const { row, role } of mine) {
-              const released =
-                effectiveStatus(row, at) === 'confirmed'
-                  ? layers.get(counterpartOf(row, role))
-                  : undefined
-              result.push(yield* toSetup(row, role, at, released))
+            for (const { row, side } of mine) {
+              result.push(yield* toSetup(row, side, at, people))
             }
 
             return new SetupsResponse({ setups: result })

@@ -43,11 +43,6 @@ export const SwipelessGroupLive = HttpApiBuilder.group(
             Effect.flatMap((current) => service.interest(current, payload))
           )
         )
-        .handle('propose', ({ payload }) =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.propose(current, payload))
-          )
-        )
         .handle('confirm', ({ payload }) =>
           CurrentProfile.pipe(
             Effect.flatMap((current) => service.confirm(current, payload))

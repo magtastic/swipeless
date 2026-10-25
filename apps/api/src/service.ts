@@ -17,8 +17,6 @@ import {
   type NotFound,
   type Profile,
   type ProfileId,
-  type ProposeRequest,
-  type ProposeResponse,
   PublishResponse,
   type RateLimited,
   type SetupsResponse,
@@ -35,7 +33,7 @@ import {
   or,
 } from 'drizzle-orm'
 import { Array as Arr, Clock, Context, Effect } from 'effect'
-import { SetupLifecycle } from './setups.ts'
+import { effectiveStatus, SetupLifecycle } from './setups.ts'
 import { generateToken, hashToken } from './token.ts'
 
 /**
@@ -64,8 +62,8 @@ export const PROFILE_TTL_MS = 90 * 24 * 60 * 60 * 1000
  * Every timestamp comes from `Clock` at call time, never from `now()` in SQL,
  * so a test can move time with `TestClock`.
  *
- * The application layer supplies database, embedding, and photo services.
- * SetupLifecycle supplies the state machine. Tests use a real database and
+ * The application layer supplies database, embedding, photo, date-suggestion
+ * and notification services. SetupLifecycle supplies the state machine. Tests use a real database and
  * replace external object storage and embeddings at their network boundaries.
  */
 const now = Effect.map(Clock.currentTimeMillis, (millis) => new Date(millis))
@@ -89,11 +87,9 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           const token = yield* generateToken()
           const embedding = yield* embeddings.embed(profile.brief)
 
-          const photoReference = profile.privateLayer.photoUrl?.startsWith(
-            'data:'
-          )
-            ? yield* photos.upload(profile.privateLayer.photoUrl)
-            : (profile.privateLayer.photoUrl ?? null)
+          const photoReference = profile.photoUrl.startsWith('data:')
+            ? yield* photos.upload(profile.photoUrl)
+            : profile.photoUrl
           const inserted = yield* db
             .insert(profiles)
             .values({
@@ -107,22 +103,19 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               availability: profile.availability,
               brief: profile.brief,
               embedding,
-              firstName: profile.privateLayer.firstName,
-              phone: profile.privateLayer.phone,
+              firstName: profile.firstName,
               photoUrl: photoReference,
+              phone: profile.privateLayer.phone,
+              // PRODUCT.md, Identity: "A person checks every profile before
+              // it goes live." Nobody is matched until that person approves.
+              reviewStatus: 'pending',
               email: profile.email ?? null,
               standingInstructions: profile.standingInstructions ?? null,
               createdAt: at,
               lastSeenAt: at,
             })
             .returning({ id: profiles.id })
-            .pipe(
-              Effect.onError(() =>
-                photoReference === null
-                  ? Effect.void
-                  : photos.remove(photoReference)
-              )
-            )
+            .pipe(Effect.onError(() => photos.remove(photoReference)))
 
           const row = inserted[0]
           if (row === undefined) {
@@ -144,9 +137,13 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
       /**
        * The top briefs for a caller, best first.
        *
-       * Hard filters: unexpired profiles, not the caller, mutual gender
-       * interest, same country, and nobody the caller already shares a setup
-       * with. Ranking is cosine distance over brief embeddings.
+       * Hard filters: approved, unexpired profiles, not the caller, mutual
+       * gender interest, same country, and nobody the caller already shares a
+       * setup with. Ranking is cosine distance over brief embeddings.
+       *
+       * PRODUCT.md, Identity: "A person checks every profile before it goes
+       * live." Only approved profiles are ever returned, and a caller still
+       * waiting on that check is not live either, so it gets an empty page.
        *
        * PRODUCT.md also lists age and distance among the hard filters. Neither
        * can be applied: the core carries an age but no age preference, and a
@@ -166,6 +163,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               interestedIn: profiles.interestedIn,
               country: profiles.country,
               embedding: profiles.embedding,
+              reviewStatus: profiles.reviewStatus,
             })
             .from(profiles)
             .where(eq(profiles.id, current.profileId))
@@ -175,7 +173,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           // The caller's row is gone. Phase 2A's Caller module answers this
           // with Unauthorized before the service is reached; until then an
           // empty page is the honest answer.
-          if (caller === undefined) {
+          if (caller === undefined || caller.reviewStatus !== 'approved') {
             return new CandidatesResponse({ candidates: [] })
           }
           if (caller.embedding === null) {
@@ -189,11 +187,18 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             )
           }
 
-          // Interest is symmetric for filtering purposes even though it is
+          // A pick is symmetric for filtering purposes even though it is
           // invisible: anyone already paired with the caller is off the list,
-          // whatever the setup's status.
+          // and a declined pair stays off for good. PRODUCT.md: only a no
+          // closes a pair, so an expired setup puts the two back in play.
           const paired = yield* db
-            .select({ a: setups.profileAId, b: setups.profileBId })
+            .select({
+              a: setups.profileAId,
+              b: setups.profileBId,
+              status: setups.status,
+              expiresAt: setups.expiresAt,
+              date: setups.date,
+            })
             .from(setups)
             .where(
               or(
@@ -202,9 +207,9 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               )
             )
 
-          const excluded = paired.flatMap((pair) =>
-            pair.a === current.profileId ? [pair.b] : [pair.a]
-          )
+          const excluded = paired
+            .filter((pair) => effectiveStatus(pair, at.getTime()) !== 'expired')
+            .map((pair) => (pair.a === current.profileId ? pair.b : pair.a))
 
           const distance = cosineDistance(profiles.embedding, caller.embedding)
 
@@ -223,6 +228,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .from(profiles)
             .where(
               and(
+                eq(profiles.reviewStatus, 'approved'),
                 gt(profiles.lastSeenAt, activeSince),
                 ne(profiles.id, current.profileId),
                 eq(profiles.country, caller.country),
@@ -296,17 +302,11 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
       ): Effect.Effect<InterestResponse, NotFound | RateLimited> =>
         lifecycle.expressInterest(current, request.profileId),
 
-      propose: (
-        current: AuthenticatedProfile,
-        request: ProposeRequest
-      ): Effect.Effect<ProposeResponse, NotFound | Conflict> =>
-        lifecycle.propose(current, request.setupId, request.proposal),
-
       confirm: (
         current: AuthenticatedProfile,
         request: ConfirmRequest
       ): Effect.Effect<ConfirmResponse, NotFound | Conflict> =>
-        lifecycle.confirm(current, request.setupId, request.slot),
+        lifecycle.confirm(current, request.setupId),
 
       decline: (
         current: AuthenticatedProfile,

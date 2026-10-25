@@ -2,7 +2,7 @@
   "name": "swipeless",
   "version": "0.1.0",
   "private": false,
-  "description": "Your agent gets to know you, finds someone worth meeting, and sends you a note with a time and place. No swiping. No small talk. Just a date.",
+  "description": "Your AI finds someone worth meeting and sends you one message with their name, a photo, a time and a place. No swiping. No small talk. Just a date.",
   "keywords": [
     "agent",
     "agent-skill",

@@ -40,17 +40,10 @@ const validProfile = {
     'She values directness and dislikes being managed. She wants someone who ' +
     'has their own thing going on. Dealbreaker: anyone who calls hiking a ' +
     'hobby and means a car park.',
+  firstName: 'Sigrún',
+  photoUrl: 'https://example.invalid/sigrun.jpg',
   privateLayer: {
-    firstName: 'Sigrún',
     phone: '+3548221234',
-  },
-}
-
-const validProposal = {
-  setupId: FAKE_SETUP_ID,
-  proposal: {
-    venue: { name: 'Kaffihús Vesturbæjar', address: 'Melhagi 20, 107' },
-    slots: ['2026-09-18T19:30:00Z'],
   },
 }
 
@@ -90,6 +83,15 @@ describe('POST /publish', () => {
     const handler = openHandler(fakeApp())
     const res = await Effect.runPromise(
       postJson(handler, '/publish', { ...validProfile, age: 12 })
+    )
+    expect(res.status).toBe(400)
+  })
+
+  test('rejects a profile without a photo with 400', async () => {
+    const handler = openHandler(fakeApp())
+    const { photoUrl: _photoUrl, ...withoutPhoto } = validProfile
+    const res = await Effect.runPromise(
+      postJson(handler, '/publish', withoutPhoto)
     )
     expect(res.status).toBe(400)
   })
@@ -160,15 +162,15 @@ describe('declared failures map to their status', () => {
 
   test('409 when the setup is in the wrong status, with that status', async () => {
     const handler = openHandler(
-      fakeApp({ propose: () => new Conflict({ status: 'countered' }) })
+      fakeApp({ confirm: () => new Conflict({ status: 'declined' }) })
     )
     const res = await Effect.runPromise(
-      postJson(handler, '/propose', validProposal)
+      postJson(handler, '/confirm', { setupId: FAKE_SETUP_ID })
     )
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({
       _tag: 'Conflict',
-      status: 'countered',
+      status: 'declined',
     })
   })
 
@@ -186,6 +188,35 @@ describe('declared failures map to their status', () => {
       _tag: 'RateLimited',
       retryAfterSeconds: 3600,
     })
+  })
+})
+
+describe('POST /interest', () => {
+  test('answers with the whole setup, so the agent can show the note', async () => {
+    const handler = openHandler(fakeApp())
+    const res = await Effect.runPromise(
+      postJson(handler, '/interest', { profileId: FAKE_PROFILE_ID })
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({
+      setup: {
+        setupId: FAKE_SETUP_ID,
+        status: 'suggested',
+        youPicked: true,
+        counterpart: { firstName: 'Jón' },
+        date: { venue: { name: 'Kaffihús Vesturbæjar' } },
+      },
+    })
+  })
+})
+
+describe('POST /propose', () => {
+  test('is gone: swipeless suggests the date now', async () => {
+    const handler = openHandler(fakeApp())
+    const res = await Effect.runPromise(
+      postJson(handler, '/propose', { setupId: FAKE_SETUP_ID })
+    )
+    expect(res.status).toBe(404)
   })
 })
 

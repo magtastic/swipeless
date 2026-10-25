@@ -7,7 +7,7 @@ import {
   test,
 } from 'bun:test'
 import { PgDrizzle } from '@swipeless/db'
-import { profiles } from '@swipeless/db/schema'
+import { profiles, setups } from '@swipeless/db/schema'
 import {
   hasTestDb,
   migrate,
@@ -15,7 +15,7 @@ import {
   truncateAll,
 } from '@swipeless/db/testing'
 import { Effect, ManagedRuntime } from 'effect'
-import { profileOverviews } from '../lib/dashboard.ts'
+import { countSetups, profileOverviews } from '../lib/dashboard.ts'
 
 const runtime = ManagedRuntime.make(TestDbLive)
 
@@ -67,11 +67,14 @@ describe.skipIf(!hasTestDb)('admin profile overviews', () => {
     expect(result.second.overviews[0]?.expired).toBe(true)
     expect(result.second.hasMoreProfiles).toBe(false)
     expect(result.empty.overviews).toEqual([])
-    expect(result.superAdmin.overviews[0]?.privateDetails).toEqual({
+    expect(result.first.overviews[0]?.reviewStatus).toBe('pending')
+    expect(result.superAdmin.overviews[0]?.note).toEqual({
       firstName: 'Private name',
+      photoUrl: `/api/photos/${result.superAdmin.overviews[0]?.id}`,
+    })
+    expect(result.superAdmin.overviews[0]?.privateDetails).toEqual({
       phone: '+3548221234',
       email: 'private@example.com',
-      photoUrl: `/api/photos/${result.superAdmin.overviews[0]?.id}`,
       standingInstructions: 'Private instructions',
     })
     expect(JSON.stringify(result.superAdmin)).not.toContain('secret-token')
@@ -87,5 +90,95 @@ describe.skipIf(!hasTestDb)('admin profile overviews', () => {
     ]) {
       expect(serialized).not.toContain(privateValue)
     }
+  })
+
+  /**
+   * The console counts what the agents see: an unsettled setup whose
+   * suggested time has passed is expired, as in `setups.ts`, while a
+   * confirmed or declined one keeps its status after the date.
+   */
+  test('counts setups by effective status, date time included', async () => {
+    const at = Date.parse('2026-09-15T12:00:00Z')
+    const past = new Date(at - 60 * 60 * 1000)
+    const future = new Date(at + 7 * 86400000)
+    const date = (time: Date) => ({
+      venue: { name: 'Mokka Kaffi', address: 'Skólavörðustígur 3a' },
+      time: time.toISOString(),
+    })
+
+    const counts = await runtime.runPromise(
+      Effect.gen(function* () {
+        const db = yield* PgDrizzle.PgDrizzle
+        const people = yield* db
+          .insert(profiles)
+          .values(
+            Array.from({ length: 4 }, (_, index) => ({
+              tokenHash: `token-${index}`,
+              age: 33,
+              gender: 'man' as const,
+              interestedIn: ['woman' as const],
+              city: 'Reykjavík',
+              country: 'IS',
+              availability: 'Sunday afternoons',
+              brief: `Brief ${index}`,
+              firstName: 'Name',
+              phone: '+3548221234',
+              lastSeenAt: new Date(at),
+            }))
+          )
+          .returning({ id: profiles.id })
+        const ids = people.map((one) => one.id).sort()
+        const pair = (a: number, b: number) => ({
+          profileAId: ids[a] ?? '',
+          profileBId: ids[b] ?? '',
+        })
+
+        yield* db.insert(setups).values([
+          // Live: still suggested.
+          {
+            ...pair(0, 1),
+            status: 'suggested' as const,
+            date: date(future),
+            expiresAt: future,
+          },
+          // The suggested time passed without both yeses.
+          {
+            ...pair(0, 2),
+            status: 'requested' as const,
+            date: date(past),
+            expiresAt: future,
+          },
+          // Fourteen days without a transition.
+          {
+            ...pair(0, 3),
+            status: 'suggested' as const,
+            date: date(future),
+            expiresAt: past,
+          },
+          // Settled statuses keep theirs after the date.
+          {
+            ...pair(1, 2),
+            status: 'confirmed' as const,
+            date: date(past),
+            expiresAt: past,
+          },
+          {
+            ...pair(1, 3),
+            status: 'declined' as const,
+            date: date(past),
+            expiresAt: future,
+          },
+        ])
+        return yield* countSetups(at)
+      })
+    )
+
+    expect(Object.fromEntries(counts.map((c) => [c.status, c.count]))).toEqual({
+      suggested: 1,
+      requested: 0,
+      confirmed: 1,
+      declined: 1,
+      expired: 2,
+    })
   })
 })
