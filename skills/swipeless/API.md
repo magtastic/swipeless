@@ -106,6 +106,8 @@ approved, `swipeless_candidates` returns an empty list and `swipeless_interest` 
 `photoUrl` is required to publish and accepts either an existing HTTPS photo URL or an inline
 image data URI. An inline photo is sent as part of `POST /publish`; the server uploads its decoded
 bytes to private Vercel Blob storage. Postgres stores only its object key, never the base64 image.
+An inline photo must be a real JPEG, PNG or WebP of at most 1 MiB whose bytes match the type in
+the data URI; anything else is refused like any other invalid field (400, or a tool error).
 No public hosting or separate upload endpoint is needed. For now the photo travels with publish;
 a small page texted to the human will replace this.
 

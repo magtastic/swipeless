@@ -29,9 +29,24 @@ outputs:
 runs:
   using: composite
   steps:
+    # A fresh `npm install --global vercel` costs ~11s on every deploy job. The
+    # CLI is pinned, so install it once into a prefix keyed on its version and
+    # restore that prefix afterwards.
+    - name: Restore Vercel CLI
+      id: vercel-cli
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.tool_cache }}/vercel-cli
+        key: vercel-cli-${{ runner.os }}-${{ inputs.cli-version }}
+
     - name: Install Vercel CLI
+      if: steps.vercel-cli.outputs.cache-hit != 'true'
       shell: bash
-      run: npm install --global vercel@${{ inputs.cli-version }}
+      run: npm install --global --prefix "$RUNNER_TOOL_CACHE/vercel-cli" vercel@${{ inputs.cli-version }}
+
+    - name: Put Vercel CLI on PATH
+      shell: bash
+      run: echo "$RUNNER_TOOL_CACHE/vercel-cli/bin" >> "$GITHUB_PATH"
 
     # VERCEL_ORG_ID + VERCEL_PROJECT_ID are how pull/build/deploy know which of
     # the two projects they are acting on. Neither project is linked to the

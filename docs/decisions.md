@@ -37,8 +37,9 @@ maintainer chose each of these from a short list of options.
   ninety-day expiry. Rejected: a scrubbed tombstone row per deleted profile.
 - The MCP delete tool answers `{ deleted: true }` because MCP cannot carry an empty result. REST
   keeps 204.
-- Tests fake only the embedding model. SQL runs against the docker Postgres. Rejected: a
-  repository seam with an in-memory fake.
+- Tests substitute only what sits outside the process: embeddings, blob storage, SMS and the
+  clock. They drive the real web handler, and SQL runs against the docker Postgres. Rejected: a
+  repository seam with an in-memory fake, and fake services behind the transports.
 - Not a PRODUCT.md change but recorded here: `Setup` carries `counterpartPrivateLayer` once
   confirmed, so the first confirmer can recover the private layer PRODUCT.md promises to both.
 

@@ -60,7 +60,7 @@ jobs:
       - name: bun run verify
         run: bun run verify
 
-      # Same suites again with TEST_DATABASE_URL set, so the 64 database tests
+      # Same suites again with TEST_DATABASE_URL set, so the database suites
       # actually run. No migration step: packages/db/src/testing.ts exports an
       # idempotent `migrate` and every database suite calls it in beforeAll.
       - name: bun run test:db

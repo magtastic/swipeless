@@ -45,8 +45,8 @@ export const AllRoutes = Layer.mergeAll(
 
 /**
  * Builds the web handler over a given app layer. Production passes AppLive
- * (service + caller over Postgres and OpenAI); the transport tests pass a fake
- * of the same shape and no database.
+ * (service + caller over Postgres and OpenAI); the tests pass the same services
+ * over the test database, with embeddings, photos and SMS kept in process.
  */
 export const makeWebHandler = <E>(
   appLayer: Layer.Layer<Swipeless | Caller, E>

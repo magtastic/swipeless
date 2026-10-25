@@ -57,7 +57,8 @@ Vercel's side, deliberately: GitHub Actions owns deployment, so the tests gate i
 `*.vercel.app` is where this lives for now, not where it lands. The swipeless domain is not
 chosen yet. The skill hardcodes the API URL, so moving it is also a skill release.
 
-- `.github/workflows/pr.yml` runs on pull requests to `main` and on pushes to `main`.
+- `.github/workflows/pr.yml` runs on pull requests to `main`. Pushes to `main` are verified by
+  `deploy.yml` alone, so each merge is checked once.
 - `.github/workflows/deploy.yml` runs on pushes to `main`: verify, then migrate, then the two
   Vercel deploys in parallel, then the skill release. Each stage waits for the one before it.
 - Both call `.github/workflows/verify.yml`, which is the only definition of the checks: `bun run

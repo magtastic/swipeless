@@ -19,12 +19,16 @@ import type { ProfileId, SetupId } from '@swipeless/shared'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FitWriter } from '../src/fit-writer.ts'
 import { Notifier, NotifierEmail } from '../src/notifier.ts'
-import { FAKE_DATE } from './support/seams.ts'
 
 /**
  * The email notifier against a real Postgres, with only the mailer faked: it
  * reads the setup and both people itself, so the reads are what is tested.
  */
+
+const FAKE_DATE = {
+  venue: { name: 'Kaffihús Vesturbæjar', address: 'Melhagi 20, 107 Reykjavík' },
+  time: '2099-09-17T19:30:00.000Z',
+}
 
 const mailer = recordingMailer()
 const runtime = ManagedRuntime.make(
