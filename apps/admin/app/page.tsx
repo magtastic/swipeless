@@ -20,8 +20,10 @@ import {
   type PendingProfile,
   type ReviewQueue,
 } from '../lib/review.ts'
+import { loadTestPeople, type TestPerson } from '../lib/test-tools.ts'
 import { followUpDate } from './date-actions.ts'
 import { approveProfile, rejectProfile } from './review-actions.ts'
+import { pickAndSayYes } from './test-actions.ts'
 
 /** Every read is per-request, and `next build` runs without a database. */
 export const dynamic = 'force-dynamic'
@@ -301,6 +303,58 @@ function Dates({ confirmed, now }: { confirmed: ConfirmedDates; now: number }) {
   )
 }
 
+function TestTools({
+  people,
+  result,
+}: {
+  people: ReadonlyArray<TestPerson>
+  result: string | undefined
+}) {
+  const select = (name: string, label: string) => (
+    <label className="flex flex-col gap-1 text-sm">
+      {label}
+      <select
+        name={name}
+        required
+        className="rounded-md border border-rule-strong bg-sheet px-3 py-2"
+      >
+        {people.map((person) => (
+          <option key={person.id} value={person.id}>
+            {person.firstName} · {person.id.slice(0, 8)}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+  return (
+    <section
+      id="test-tools"
+      className="flex flex-col gap-4 rounded-xl border border-dashed border-red p-5"
+    >
+      <div>
+        <h2 className="text-lg font-semibold">Test tools · local only</h2>
+        <p className="mt-1 text-sm text-soft">
+          Their agent picks the other person and their human says yes, through
+          the real setup flow, emails included. Run it once for a date request
+          to the other person; run it the other way round to confirm. Hidden in
+          production.
+        </p>
+      </div>
+      <form action={pickAndSayYes} className="flex flex-wrap items-end gap-3">
+        {select('actorId', 'As')}
+        {select('targetId', 'picks and says yes to')}
+        <button
+          type="submit"
+          className="rounded-md border border-red px-4 py-2 text-sm font-semibold text-red hover:bg-red/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        >
+          Pick and say yes
+        </button>
+      </form>
+      {result && <p className="text-sm">Last run: {result}</p>}
+    </section>
+  )
+}
+
 function PrivateDetails({
   note,
   details,
@@ -535,7 +589,7 @@ function Events({ events }: { events: ReadonlyArray<AdminEvent> }) {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string | string[] }>
+  searchParams: Promise<{ page?: string | string[]; test?: string | string[] }>
 }) {
   const session = await auth()
   if (!session?.user) redirect('/signin')
@@ -547,10 +601,11 @@ export default async function Page({
     requestedPage <= 100000
       ? requestedPage
       : 1
-  const [result, review, dates] = await Promise.all([
+  const [result, review, dates, testPeople] = await Promise.all([
     loadDashboard(page, session.user.email),
     loadReviewQueue(session.user.email),
     loadConfirmedDates(session.user.email),
+    loadTestPeople(session.user.email),
   ])
   const now = Date.now()
 
@@ -598,6 +653,12 @@ export default async function Page({
             <p className="text-sm text-red">
               The review queue could not load: {review.reason}
             </p>
+          )}
+          {testPeople.length > 0 && (
+            <TestTools
+              people={testPeople}
+              result={typeof query.test === 'string' ? query.test : undefined}
+            />
           )}
           {dates._tag === 'Loaded' ? (
             <Dates confirmed={dates.confirmed} now={now} />

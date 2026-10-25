@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@swipeless/api": "workspace:*",
     "@swipeless/db": "workspace:*",
     "@swipeless/email": "workspace:*",
     "@swipeless/shared": "workspace:*",

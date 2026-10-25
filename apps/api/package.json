@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./act-as": "./src/act-as.ts"
+  },
   "scripts": {
     "dev": "bun --env-file=../../.env run --hot src/dev.ts",
     "build": "bun build src/entry.ts --target=node --format=esm --outfile=dist/entry.js",
