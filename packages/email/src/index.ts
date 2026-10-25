@@ -1,12 +1,14 @@
 import { Config, Context, Effect, Layer, Option, Redacted } from 'effect'
 
 export * from './messages.ts'
+export { escapeHtml, highlight, type Line, note } from './note.ts'
 
-/** One plain-text email. Basic on purpose: no HTML, no templates service. */
+/** One email: a plain-text body, and the handwritten note when there is one. */
 export interface Email {
   readonly to: string
   readonly subject: string
   readonly text: string
+  readonly html?: string
 }
 
 /**
@@ -65,6 +67,7 @@ const resend = (apiKey: Redacted.Redacted) =>
               to: [email.to],
               subject: email.subject,
               text: email.text,
+              ...(email.html ? { html: email.html } : {}),
               ...Option.match(replyTo, {
                 onNone: () => ({}),
                 onSome: (address) => ({ reply_to: address }),

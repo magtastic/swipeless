@@ -190,3 +190,12 @@ bend it, noted below.
 - "how was the date?" is not scheduled. The admin site lists confirmed dates, and the super admin
   presses a button to email both, once per date. Replies come back as plain email. PRODUCT.md
   words the question "did you enjoy your date?"; the maintainer asked for "how was the date?".
+- Emails are a handwritten note on the notebook page from Visual identity, with a plain-text
+  twin. The date request has "do you want to go out?" with yes and no boxes.
+- The boxes link the small yes-or-no page PRODUCT.md describes, served by the API at `/answer`.
+  A link is signed for one person and one setup, and stands in for the bearer token there only.
+  GET only shows the note, because mail scanners open every link; the answer is the page's POST,
+  through the same confirm and decline as the tools. No optional reason on a no yet.
+- The admin site has a local-only tool to pick and say yes as someone, to test the emails. It
+  breaks PRODUCT.md, Trust ("the human, not the AI, says yes to every date"), so it is hidden and
+  refused in production.

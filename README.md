@@ -123,6 +123,10 @@ the button next to a confirmed date. Set on the API and admin Vercel projects:
 | `RESEND_API_KEY` | Resend API key. Without it every email is only logged |
 | `EMAIL_FROM` | Sender, on a domain verified in Resend. Defaults to `onboarding@resend.dev`, which only delivers to the Resend account's own address |
 | `EMAIL_REPLY_TO` | Optional. Where replies to "how was the date?" land |
+| `API_BASE_URL` | API only. Origin the yes-or-no links point at. Defaults to `https://swipeless-api.vercel.app`; local `.env` sets `http://localhost:3001` |
+
+The date request's yes and no boxes link `/answer` on the API, a small page signed for that one
+person and setup with the Blob token, the key photo links already use.
 
 ## Private photos
 

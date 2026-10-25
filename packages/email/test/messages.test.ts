@@ -47,3 +47,34 @@ test('the follow-up asks how the date was', () => {
   expect(email.subject).toBe('how was the date?')
   expect(email.text).toContain('how was the date with Jón?')
 })
+
+test('the note escapes names, and the date request links its boxes', () => {
+  const email = dateRequested(
+    'a@example.com',
+    '<b>Anna</b>',
+    'Jón & co',
+    date,
+    {
+      yes: 'https://x.test/answer?choice=yes&sig=1',
+      no: 'https://x.test/answer?choice=no&sig=1',
+    }
+  )
+  expect(email.html).toContain('&lt;b&gt;Anna&lt;/b&gt;')
+  expect(email.html).not.toContain('<b>Anna</b>')
+  expect(email.html).toContain('Jón &amp; co would like to meet you.')
+  expect(email.html).toContain(
+    'href="https://x.test/answer?choice=yes&amp;sig=1"'
+  )
+  expect(email.text).toContain('yes: https://x.test/answer?choice=yes&sig=1')
+})
+
+test('every email carries the handwritten note', () => {
+  for (const email of [
+    profileApproved('a@example.com', 'Anna'),
+    dateRequested('a@example.com', 'Anna', 'Jón', date),
+    dateConfirmed('a@example.com', 'Anna', 'Jón', '+354 555 0101', date),
+    howWasTheDate('a@example.com', 'Anna', 'Jón'),
+  ]) {
+    expect(email.html).toContain('xo, swipeless')
+  }
+})

@@ -4,6 +4,7 @@ import { dateConfirmed, dateRequested, Mailer } from '@swipeless/email'
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
+import { answerUrl } from './answer-links.ts'
 
 /**
  * PRODUCT.md, SMS, email and small pages: "Everything after signup reaches
@@ -87,9 +88,15 @@ export const NotifierEmail = Layer.effect(
         }
         const { date, self, other } = found
         const to = found.self.email
+        // The small page lets them answer without their agent. Without a
+        // signing key the email still goes, pointing at the agent instead.
+        const answer = yield* Effect.all({
+          yes: answerUrl(setupId, profileId, 'yes'),
+          no: answerUrl(setupId, profileId, 'no'),
+        }).pipe(Effect.orElseSucceed(() => undefined))
         yield* mailer.send(
           kind === 'date requested'
-            ? dateRequested(to, self.firstName, other.firstName, date)
+            ? dateRequested(to, self.firstName, other.firstName, date, answer)
             : dateConfirmed(
                 to,
                 self.firstName,
