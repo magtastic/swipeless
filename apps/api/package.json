@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@swipeless/db": "workspace:*",
+    "@swipeless/email": "workspace:*",
     "@swipeless/shared": "workspace:*",
     "@effect/ai": "catalog:",
     "@effect/ai-openai": "catalog:",

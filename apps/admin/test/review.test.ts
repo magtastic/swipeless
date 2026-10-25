@@ -14,11 +14,13 @@ import {
   TestDbLive,
   truncateAll,
 } from '@swipeless/db/testing'
+import { recordingMailer } from '@swipeless/email/testing'
 import { asc, eq } from 'drizzle-orm'
-import { Effect, ManagedRuntime } from 'effect'
+import { Effect, Layer, ManagedRuntime } from 'effect'
 import { decideReview, recordReview, reviewQueue } from '../lib/review.ts'
 
-const runtime = ManagedRuntime.make(TestDbLive)
+const mailer = recordingMailer()
+const runtime = ManagedRuntime.make(Layer.merge(TestDbLive, mailer.layer))
 
 const SUPER = 'magnus@smitten.fun'
 const at = Date.parse('2026-10-20T12:00:00Z')
@@ -54,7 +56,10 @@ test('a non-super admin is refused without touching the database', async () => {
 
 describe.skipIf(!hasTestDb)('admin review queue', () => {
   beforeAll(() => runtime.runPromise(migrate))
-  beforeEach(() => runtime.runPromise(truncateAll))
+  beforeEach(async () => {
+    mailer.sent.length = 0
+    await runtime.runPromise(truncateAll)
+  })
   afterAll(() => runtime.dispose())
 
   test('lists pending profiles oldest first, note for the super admin only', async () => {
@@ -107,7 +112,10 @@ describe.skipIf(!hasTestDb)('admin review queue', () => {
         const db = yield* PgDrizzle.PgDrizzle
         const [a, b] = yield* db
           .insert(profiles)
-          .values([profile(0), profile(1)])
+          .values([
+            profile(0, { email: 'name0@example.com' }),
+            profile(1, { email: 'name1@example.com' }),
+          ])
           .returning({ id: profiles.id })
         if (!a || !b) return yield* Effect.dieMessage('insert failed')
 
@@ -165,6 +173,26 @@ describe.skipIf(!hasTestDb)('admin review queue', () => {
       { kind: 'profile.rejected', profileId: result.b, payload: {} },
     ])
     expect(result.queue.pending).toEqual([])
+    // Only the approval emails, and only once.
+    expect(mailer.sent.map(({ to, subject }) => ({ to, subject }))).toEqual([
+      { to: 'name0@example.com', subject: "you're live on swipeless" },
+    ])
+  })
+
+  test('approving someone without an email sends nothing', async () => {
+    const outcome = await runtime.runPromise(
+      Effect.gen(function* () {
+        const db = yield* PgDrizzle.PgDrizzle
+        const [row] = yield* db
+          .insert(profiles)
+          .values(profile(0))
+          .returning({ id: profiles.id })
+        if (!row) return yield* Effect.dieMessage('insert failed')
+        return yield* decideReview(row.id, 'approved', SUPER)
+      })
+    )
+    expect(outcome).toEqual({ _tag: 'Decided', decision: 'approved' })
+    expect(mailer.sent).toEqual([])
   })
 
   test('the forbidden path writes nothing', async () => {
@@ -186,5 +214,6 @@ describe.skipIf(!hasTestDb)('admin review queue', () => {
       })
     )
     expect(status).toEqual({ status: 'pending', events: 0 })
+    expect(mailer.sent).toEqual([])
   })
 })

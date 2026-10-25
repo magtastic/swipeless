@@ -11,10 +11,16 @@ import {
   type SetupCount,
 } from '../lib/dashboard.ts'
 import {
+  type ConfirmedDate,
+  type ConfirmedDates,
+  loadConfirmedDates,
+} from '../lib/dates.ts'
+import {
   loadReviewQueue,
   type PendingProfile,
   type ReviewQueue,
 } from '../lib/review.ts'
+import { followUpDate } from './date-actions.ts'
 import { approveProfile, rejectProfile } from './review-actions.ts'
 
 /** Every read is per-request, and `next build` runs without a database. */
@@ -189,6 +195,105 @@ function Review({ queue }: { queue: ReviewQueue }) {
         <p className="text-sm text-soft">
           More are waiting. Decide these and the next ones appear.
         </p>
+      )}
+    </section>
+  )
+}
+
+const dateTime = (value: string) =>
+  new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Atlantic/Reykjavik',
+  }).format(new Date(value))
+
+function DateRow({
+  date,
+  canSend,
+  now,
+}: {
+  date: ConfirmedDate
+  canSend: boolean
+  now: number
+}) {
+  const past = Date.parse(date.time) <= now
+  const anyEmail = date.people?.some((person) => person.hasEmail) ?? false
+  return (
+    <li className="flex flex-col gap-3 rounded-xl border border-rule-strong bg-sheet p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="font-semibold">
+          {date.people ? (
+            <span className="font-hand text-3xl font-normal">
+              {date.people.map((person) => person.firstName).join(' & ')}
+            </span>
+          ) : (
+            <code className="break-all text-xs">{date.id}</code>
+          )}
+        </p>
+        <p className="mt-1 text-sm">
+          {date.venue.name}, {date.venue.address}
+        </p>
+        <p className="mt-1 text-sm text-soft">
+          {dateTime(date.time)} · {past ? 'past' : 'upcoming'}
+          {date.people &&
+            ` · email: ${date.people
+              .map(
+                (person) =>
+                  `${person.firstName} ${person.hasEmail ? 'yes' : 'no'}`
+              )
+              .join(', ')}`}
+        </p>
+      </div>
+      {date.followUpSentAt ? (
+        <p className="shrink-0 text-sm text-soft">
+          Asked {dateTime(date.followUpSentAt)}
+        </p>
+      ) : canSend ? (
+        anyEmail ? (
+          <form action={followUpDate} className="shrink-0">
+            <input type="hidden" name="setupId" value={date.id} />
+            <button
+              type="submit"
+              className="rounded-md bg-hi px-4 py-2 text-sm font-semibold text-hi-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              Ask how the date was
+            </button>
+          </form>
+        ) : (
+          <p className="shrink-0 text-sm text-soft">No email on file</p>
+        )
+      ) : null}
+    </li>
+  )
+}
+
+function Dates({ confirmed, now }: { confirmed: ConfirmedDates; now: number }) {
+  return (
+    <section className="flex flex-col gap-4" aria-labelledby="confirmed-dates">
+      <div>
+        <h2 id="confirmed-dates" className="text-lg font-semibold">
+          Confirmed dates
+        </h2>
+        <p className="mt-1 text-sm text-soft">
+          Both said yes. Latest date first. After the date, ask both how it
+          went: one email each, replies come to the inbox.
+          {!confirmed.canSend &&
+            ' Only the super admin can send the follow-up.'}
+        </p>
+      </div>
+      {confirmed.dates.length === 0 ? (
+        <p className="font-hand text-2xl text-ink">No dates yet.</p>
+      ) : (
+        <ol className="flex flex-col gap-4">
+          {confirmed.dates.map((date) => (
+            <DateRow
+              key={date.id}
+              date={date}
+              canSend={confirmed.canSend}
+              now={now}
+            />
+          ))}
+        </ol>
       )}
     </section>
   )
@@ -440,10 +545,12 @@ export default async function Page({
     requestedPage <= 100000
       ? requestedPage
       : 1
-  const [result, review] = await Promise.all([
+  const [result, review, dates] = await Promise.all([
     loadDashboard(page, session.user.email),
     loadReviewQueue(session.user.email),
+    loadConfirmedDates(session.user.email),
   ])
+  const now = Date.now()
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-10 px-6 py-12">
@@ -488,6 +595,13 @@ export default async function Page({
           ) : (
             <p className="text-sm text-red">
               The review queue could not load: {review.reason}
+            </p>
+          )}
+          {dates._tag === 'Loaded' ? (
+            <Dates confirmed={dates.confirmed} now={now} />
+          ) : (
+            <p className="text-sm text-red">
+              Confirmed dates could not load: {dates.reason}
             </p>
           )}
           <Profiles counts={result.dashboard.profiles} />

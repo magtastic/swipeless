@@ -16,6 +16,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@swipeless/db": "workspace:*",
+        "@swipeless/email": "workspace:*",
         "@swipeless/photos": "workspace:*",
         "@swipeless/shared": "workspace:*",
         "drizzle-orm": "catalog:",
@@ -47,6 +48,7 @@
         "@effect/rpc": "catalog:",
         "@effect/sql": "catalog:",
         "@swipeless/db": "workspace:*",
+        "@swipeless/email": "workspace:*",
         "@swipeless/photos": "workspace:*",
         "@swipeless/shared": "workspace:*",
         "drizzle-orm": "catalog:",
@@ -72,6 +74,16 @@
       "devDependencies": {
         "@types/pg": "catalog:",
         "drizzle-kit": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/email": {
+      "name": "@swipeless/email",
+      "dependencies": {
+        "effect": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -363,6 +375,8 @@
     "@swipeless/api": ["@swipeless/api@workspace:apps/api"],
 
     "@swipeless/db": ["@swipeless/db@workspace:packages/db"],
+
+    "@swipeless/email": ["@swipeless/email@workspace:packages/email"],
 
     "@swipeless/photos": ["@swipeless/photos@workspace:packages/photos"],
 

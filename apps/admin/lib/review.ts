@@ -1,5 +1,6 @@
 import { DbLive, PgDrizzle } from '@swipeless/db'
 import { adminEvents, profiles } from '@swipeless/db/schema'
+import { Mailer, MailerLive, profileApproved } from '@swipeless/email'
 import { isPhotoKey } from '@swipeless/photos'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { Cause, Clock, Effect } from 'effect'
@@ -183,9 +184,19 @@ export const decideReview = (
       .select({ profileId: logged.profileId })
       .from(logged)
 
-    return rows.length === 0
-      ? ({ _tag: 'NotPending' } as const)
-      : ({ _tag: 'Decided', decision } as const)
+    if (rows.length === 0) return { _tag: 'NotPending' } as const
+
+    if (decision === 'approved') {
+      const [person] = yield* db
+        .select({ firstName: profiles.firstName, email: profiles.email })
+        .from(profiles)
+        .where(eq(profiles.id, profileId))
+      if (person?.email) {
+        const mailer = yield* Mailer
+        yield* mailer.send(profileApproved(person.email, person.firstName))
+      }
+    }
+    return { _tag: 'Decided', decision } as const
   })
 
 const unavailable = (cause: Cause.Cause<unknown>) =>
@@ -213,6 +224,7 @@ export const recordReview = (
   isSuperAdmin(verifiedEmail)
     ? Effect.runPromise(
         decideReview(profileId, decision, verifiedEmail).pipe(
+          Effect.provide(MailerLive),
           Effect.provide(DbLive),
           Effect.catchAllCause(unavailable)
         )

@@ -174,3 +174,19 @@ Implementation choices for a demo of the 2026-10-23 flow. These are not PRODUCT.
   to a texted small page once pages exist.
 - Profiles start `pending`. The admin review queue approves or rejects them, and only approved
   profiles are matched.
+
+## 2026-10-25: Basic email through Resend
+
+Implementation choices, on the maintainer's request. Not PRODUCT.md changes, but two of them
+bend it, noted below.
+
+- Email goes through Resend, as plain text, from a shared `@swipeless/email` package used by the
+  API and the admin site. Only people who gave an email get one; email stays optional. Without
+  `RESEND_API_KEY` every email is only logged.
+- Three emails are automatic: "you're live" when the super admin approves a profile, the date
+  request to the picked person, and "it's a date" with the other person's number to both when
+  both say yes. PRODUCT.md says the date request and the number go by SMS; email stands in until
+  there is an SMS provider.
+- "how was the date?" is not scheduled. The admin site lists confirmed dates, and the super admin
+  presses a button to email both, once per date. Replies come back as plain email. PRODUCT.md
+  words the question "did you enjoy your date?"; the maintainer asked for "how was the date?".
