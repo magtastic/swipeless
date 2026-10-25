@@ -38,6 +38,24 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # The schema in packages/db/src/schema and the committed migrations must
+      # describe the same database. deploy.yml only applies migrations, so a
+      # schema change without `bun run db:generate` would pass every test and
+      # never reach production. generate needs no database: it diffs the schema
+      # against the latest snapshot in packages/db/drizzle/meta, and writes
+      # nothing when they agree.
+      - name: migrations match the schema
+        run: |
+          set -euo pipefail
+          bunx drizzle-kit generate
+          drift=$(git status --porcelain --untracked-files=all packages/db/drizzle)
+          if [ -n "$drift" ]; then
+            echo "::error file=packages/db/src/schema/index.ts::schema changed without a migration; run \`bun run db:generate\` and commit packages/db/drizzle"
+            echo "$drift"
+            git diff packages/db/drizzle
+            exit 1
+          fi
+
       # typecheck + biome + `bun test`. The database suites skip loudly here.
       - name: bun run verify
         run: bun run verify
