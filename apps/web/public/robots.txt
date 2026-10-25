@@ -1,0 +1,5 @@
+# Everyone is welcome, people and agents alike.
+User-agent: *
+Allow: /
+
+Sitemap: https://swipeless-web.vercel.app/sitemap.xml

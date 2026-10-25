@@ -28,6 +28,7 @@ Bun workspace, Effect end to end.
 ```
 apps/api        Effect HttpApi (REST) + MCP server, deployed as Vercel functions
 apps/admin      Next.js admin, Google OAuth
+apps/web        Static marketing site and llms.txt, no build step
 packages/shared Effect Schema contract shared by API, MCP, and docs
 packages/db     Postgres + pgvector via @effect/sql, migrations via drizzle-kit
 skills/         The agent-facing skill, installable with npx skills add
@@ -50,8 +51,9 @@ bun run verify       # typecheck + biome + tests
 |---|---|
 | API + MCP | https://swipeless-api.vercel.app |
 | Admin | https://swipeless-admin.vercel.app |
+| Website | https://swipeless-web.vercel.app |
 
-Both are Vercel projects under the `smitten-server` team. Neither is connected to this repo on
+All three are Vercel projects under the `smitten-server` team. None is connected to this repo on
 Vercel's side, deliberately: GitHub Actions owns deployment, so the tests gate it.
 
 `*.vercel.app` is where this lives for now, not where it lands. The swipeless domain is not
@@ -59,8 +61,9 @@ chosen yet. The skill hardcodes the API URL, so moving it is also a skill releas
 
 - `.github/workflows/pr.yml` runs on pull requests to `main`. Pushes to `main` are verified by
   `deploy.yml` alone, so each merge is checked once.
-- `.github/workflows/deploy.yml` runs on pushes to `main`: verify, then migrate, then the two
-  Vercel deploys in parallel, then the skill release. Each stage waits for the one before it.
+- `.github/workflows/deploy.yml` runs on pushes to `main`: verify, then migrate, then the API
+  and admin deploys in parallel, then the skill release. Each stage waits for the one before it.
+  The website needs no database, so it deploys as soon as verify passes.
 - Both call `.github/workflows/verify.yml`, which is the only definition of the checks: `bun run
   verify` plus `bun run test:db` against a pgvector service container on :5434.
 
@@ -110,7 +113,7 @@ npx vercel@59.16.0 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 ```
 
 Migrate before deploying the API, never after. Repeat the last four lines with the other project
-id for the admin.
+id for the admin, and with `prj_iDjZRQ3A42E8tiQN89L3QdqokuZ8` for the website.
 
 ## Email
 

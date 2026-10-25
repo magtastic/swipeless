@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "headers": [
+    {
+      "source": "/llms.txt",
+      "headers": [
+        { "key": "content-type", "value": "text/plain; charset=utf-8" },
+        { "key": "access-control-allow-origin", "value": "*" }
+      ]
+    }
+  ]
+}
