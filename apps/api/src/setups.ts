@@ -25,9 +25,9 @@ import {
 } from '@swipeless/shared'
 import { and, desc, eq, gt, inArray, isNull, not, or } from 'drizzle-orm'
 import { Clock, Config, Effect, Schema } from 'effect'
+import type { AuthenticatedProfile } from './caller.ts'
 import { type DateParty, DateSuggester } from './date-suggester.ts'
 import { Notifier } from './notifier.ts'
-import type { AuthenticatedProfile } from './service.ts'
 
 /**
  * The setup: one row per pair, from an agent's pick to the release of the
@@ -60,10 +60,6 @@ import type { AuthenticatedProfile } from './service.ts'
  * may see a row, the weekly ceiling on picks, lazy expiry, and the guarded
  * write that keeps two concurrent calls from stepping on each other. The
  * adapters and `Swipeless` know none of it; they call the five methods below.
- *
- * `AuthenticatedProfile` is imported as a type only. `service.ts` imports this
- * module for real, so a value import would close a module cycle and leave
- * `SetupLifecycle` undefined for whichever file is loaded first.
  */
 
 /**

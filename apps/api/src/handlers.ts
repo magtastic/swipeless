@@ -3,7 +3,7 @@ import { HealthResponse } from '@swipeless/shared'
 import { Effect, Layer } from 'effect'
 import { BearerAuth, SwipelessApi } from './api.ts'
 import { Caller } from './caller.ts'
-import { CurrentProfile, Swipeless } from './service.ts'
+import { Swipeless } from './service.ts'
 
 /**
  * The REST half of authentication: the platform pulls the token out of the
@@ -26,42 +26,21 @@ export const SwipelessGroupLive = HttpApiBuilder.group(
     Effect.gen(function* () {
       const service = yield* Swipeless
 
-      return handlers
-        .handle('health', () =>
-          Effect.succeed(new HealthResponse({ ok: true }))
-        )
-        .handle('publish', ({ payload }) => service.publish(payload))
-        .handle('candidates', ({ urlParams }) =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) =>
-              service.candidates(current, urlParams.limit)
-            )
+      return (
+        handlers
+          .handle('health', () =>
+            Effect.succeed(new HealthResponse({ ok: true }))
           )
-        )
-        .handle('interest', ({ payload }) =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.interest(current, payload))
+          .handle('publish', ({ payload }) => service.publish(payload))
+          // BearerAuth provides CurrentProfile to every endpoint from here on.
+          .handle('candidates', ({ urlParams }) =>
+            service.candidates(urlParams.limit)
           )
-        )
-        .handle('confirm', ({ payload }) =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.confirm(current, payload))
-          )
-        )
-        .handle('decline', ({ payload }) =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.decline(current, payload))
-          )
-        )
-        .handle('deleteProfile', () =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.deleteProfile(current))
-          )
-        )
-        .handle('setups', () =>
-          CurrentProfile.pipe(
-            Effect.flatMap((current) => service.setups(current))
-          )
-        )
+          .handle('interest', ({ payload }) => service.interest(payload))
+          .handle('confirm', ({ payload }) => service.confirm(payload))
+          .handle('decline', ({ payload }) => service.decline(payload))
+          .handle('deleteProfile', () => service.deleteProfile())
+          .handle('setups', () => service.setups())
+      )
     })
 )

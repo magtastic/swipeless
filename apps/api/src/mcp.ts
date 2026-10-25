@@ -10,6 +10,7 @@ import {
   DeclineRequest,
   DeclineResponse,
   DeleteError,
+  type Gone,
   InterestError,
   InterestRequest,
   InterestResponse,
@@ -21,7 +22,7 @@ import {
   Unauthorized,
 } from '@swipeless/shared'
 import { Effect, Layer, Option, Schema } from 'effect'
-import { Caller, tokenFromAuthorization } from './caller.ts'
+import { Caller, CurrentProfile, tokenFromAuthorization } from './caller.ts'
 import { Swipeless } from './service.ts'
 
 /**
@@ -152,34 +153,34 @@ const SwipelessToolkitLive = SwipelessToolkit.toLayer(
   Effect.gen(function* () {
     const service = yield* Swipeless
     const caller = yield* Caller
-    const current = currentProfile(caller)
+
+    /** What the REST middleware does, per tool call: resolve, then provide. */
+    const authenticated = <A, E>(
+      effect: Effect.Effect<A, E, CurrentProfile>
+    ): Effect.Effect<A, E | Unauthorized | Gone> =>
+      Effect.provideServiceEffect(
+        effect,
+        CurrentProfile,
+        currentProfile(caller)
+      )
 
     return {
       // Publishing is how an agent gets a token, so it is the one tool that
       // does not need one.
       swipeless_publish: (params) => service.publish(new Profile(params)),
       swipeless_candidates: ({ limit }) =>
-        Effect.flatMap(current, (profile) =>
-          service.candidates(profile, limit ?? 10)
-        ),
+        authenticated(service.candidates(limit ?? 10)),
       swipeless_interest: (params) =>
-        Effect.flatMap(current, (profile) =>
-          service.interest(profile, new InterestRequest(params))
-        ),
+        authenticated(service.interest(new InterestRequest(params))),
       swipeless_confirm: (params) =>
-        Effect.flatMap(current, (profile) =>
-          service.confirm(profile, new ConfirmRequest(params))
-        ),
+        authenticated(service.confirm(new ConfirmRequest(params))),
       swipeless_decline: (params) =>
-        Effect.flatMap(current, (profile) =>
-          service.decline(profile, new DeclineRequest(params))
-        ),
+        authenticated(service.decline(new DeclineRequest(params))),
       swipeless_delete: () =>
-        Effect.flatMap(current, (profile) =>
-          service.deleteProfile(profile).pipe(Effect.as({ deleted: true }))
+        authenticated(
+          service.deleteProfile().pipe(Effect.as({ deleted: true as const }))
         ),
-      swipeless_setups: () =>
-        Effect.flatMap(current, (profile) => service.setups(profile)),
+      swipeless_setups: () => authenticated(service.setups()),
     }
   })
 )

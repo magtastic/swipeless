@@ -1,10 +1,9 @@
 import { PgDrizzle } from '@swipeless/db'
 import { isLive } from '@swipeless/db/rules'
 import { profiles } from '@swipeless/db/schema'
-import { Gone, Unauthorized } from '@swipeless/shared'
+import { Gone, type ProfileId, Unauthorized } from '@swipeless/shared'
 import { eq } from 'drizzle-orm'
-import { Clock, Effect, Redacted } from 'effect'
-import type { AuthenticatedProfile } from './service.ts'
+import { Clock, Context, Effect, Redacted } from 'effect'
 import { hashToken } from './token.ts'
 
 /**
@@ -20,6 +19,25 @@ import { hashToken } from './token.ts'
  * Time comes from `Clock`, never from `now()` in SQL, so `TestClock` can walk a
  * profile over the expiry line.
  */
+
+/**
+ * The authenticated profile, resolved from the bearer token issued at publish.
+ * The token itself does not travel past this module.
+ */
+export interface AuthenticatedProfile {
+  readonly profileId: ProfileId
+}
+
+/**
+ * Who is calling, as context rather than as a parameter. Each transport
+ * provides it once per request — the REST middleware and the MCP toolkit both
+ * from `Caller.resolve` — and every authenticated `Swipeless` method reads it
+ * itself, so no transport handles the profile in between.
+ */
+export class CurrentProfile extends Context.Tag('CurrentProfile')<
+  CurrentProfile,
+  AuthenticatedProfile
+>() {}
 
 /** `Bearer <token>`, case-insensitive scheme, surrounding space ignored. */
 const BEARER = /^bearer[ \t]+(\S+)[ \t]*$/i
