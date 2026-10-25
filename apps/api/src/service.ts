@@ -1,7 +1,8 @@
 import { EmbeddingModel } from '@effect/ai'
 import { PgDrizzle } from '@swipeless/db'
+import { effectiveStatus, isLiveSql } from '@swipeless/db/rules'
 import { adminEvents, profiles, setups } from '@swipeless/db/schema'
-import { PhotoStorage } from '@swipeless/photos'
+import { ProfilePhotos } from '@swipeless/photos'
 import {
   Candidate,
   CandidateCore,
@@ -16,7 +17,6 @@ import {
   type InterestResponse,
   type NotFound,
   type Profile,
-  type ProfileId,
   PublishResponse,
   type RateLimited,
   type SetupsResponse,
@@ -26,37 +26,22 @@ import {
   arrayContains,
   cosineDistance,
   eq,
-  gt,
   inArray,
   ne,
   notInArray,
   or,
 } from 'drizzle-orm'
-import { Array as Arr, Clock, Context, Effect } from 'effect'
-import { effectiveStatus, SetupLifecycle } from './setups.ts'
+import { Array as Arr, Clock, Effect } from 'effect'
+import { CurrentProfile } from './caller.ts'
+import { SetupLifecycle } from './setups.ts'
 import { generateToken, hashToken } from './token.ts'
-
-/**
- * The authenticated profile, resolved from the bearer token issued at publish.
- * The token itself does not travel past the Caller module.
- */
-export interface AuthenticatedProfile {
-  readonly profileId: ProfileId
-}
-
-export class CurrentProfile extends Context.Tag('CurrentProfile')<
-  CurrentProfile,
-  AuthenticatedProfile
->() {}
-
-/** PRODUCT.md: "Profiles expire automatically after ninety days without a check-in." */
-export const PROFILE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 /**
  * The service. The HttpApi handlers and the MCP tools both call these methods
  * and nothing else, so the two interfaces cannot drift.
  *
- * Failures are the operation's failures only. Resolving the caller happens
+ * Failures are the operation's failures only. Every method but `publish`
+ * reads who is calling from `CurrentProfile`, which the transport resolves
  * before any of this is reached, so `Unauthorized` and `Gone` are not here.
  *
  * Every timestamp comes from `Clock` at call time, never from `now()` in SQL,
@@ -74,7 +59,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
     const db = yield* PgDrizzle.PgDrizzle
     const embeddings = yield* EmbeddingModel.EmbeddingModel
     const lifecycle = yield* SetupLifecycle
-    const photos = yield* PhotoStorage
+    const photos = yield* ProfilePhotos
 
     return {
       /**
@@ -87,9 +72,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           const token = yield* generateToken()
           const embedding = yield* embeddings.embed(profile.brief)
 
-          const photoReference = profile.photoUrl.startsWith('data:')
-            ? yield* photos.upload(profile.photoUrl)
-            : profile.photoUrl
+          const photoReference = yield* photos.store(profile.photoUrl)
           const inserted = yield* db
             .insert(profiles)
             .values({
@@ -115,7 +98,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               lastSeenAt: at,
             })
             .returning({ id: profiles.id })
-            .pipe(Effect.onError(() => photos.remove(photoReference)))
+            .pipe(Effect.onError(() => photos.discard(photoReference)))
 
           const row = inserted[0]
           if (row === undefined) {
@@ -150,12 +133,11 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
        * city and a radius but no coordinates. Flagged rather than invented.
        */
       candidates: (
-        current: AuthenticatedProfile,
         limit: number
-      ): Effect.Effect<CandidatesResponseType> =>
+      ): Effect.Effect<CandidatesResponseType, never, CurrentProfile> =>
         Effect.gen(function* () {
+          const current = yield* CurrentProfile
           const at = yield* now
-          const activeSince = new Date(at.getTime() - PROFILE_TTL_MS)
 
           const callers = yield* db
             .select({
@@ -229,7 +211,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .where(
               and(
                 eq(profiles.reviewStatus, 'approved'),
-                gt(profiles.lastSeenAt, activeSince),
+                isLiveSql(at.getTime()),
                 ne(profiles.id, current.profileId),
                 eq(profiles.country, caller.country),
                 inArray(profiles.gender, [...caller.interestedIn]),
@@ -273,8 +255,9 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
        * A hard delete. The cascade takes the setups with it; the admin event
        * outlives the profile, which is why admin_events has no foreign key.
        */
-      deleteProfile: (current: AuthenticatedProfile): Effect.Effect<void> =>
+      deleteProfile: (): Effect.Effect<void, never, CurrentProfile> =>
         Effect.gen(function* () {
+          const current = yield* CurrentProfile
           const at = yield* now
 
           const rows = yield* db
@@ -282,7 +265,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .from(profiles)
             .where(eq(profiles.id, current.profileId))
           const photo = rows[0]?.photoUrl
-          if (photo) yield* photos.remove(photo)
+          if (photo) yield* photos.discard(photo)
           yield* db.delete(profiles).where(eq(profiles.id, current.profileId))
 
           yield* db.insert(adminEvents).values({
@@ -293,29 +276,36 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           })
         }).pipe(Effect.orDie),
 
-      /* --- The setup lifecycle. Every rule lives in SetupLifecycle; --- */
-      /* --- this is the unwrapping of the request and nothing else.  --- */
+      /* --- The setup lifecycle. Every rule lives in SetupLifecycle;  --- */
+      /* --- this reads the caller, unwraps the request, and no more. --- */
 
       interest: (
-        current: AuthenticatedProfile,
         request: InterestRequest
-      ): Effect.Effect<InterestResponse, NotFound | RateLimited> =>
-        lifecycle.expressInterest(current, request.profileId),
+      ): Effect.Effect<
+        InterestResponse,
+        NotFound | RateLimited,
+        CurrentProfile
+      > =>
+        Effect.flatMap(CurrentProfile, (current) =>
+          lifecycle.expressInterest(current, request.profileId)
+        ),
 
       confirm: (
-        current: AuthenticatedProfile,
         request: ConfirmRequest
-      ): Effect.Effect<ConfirmResponse, NotFound | Conflict> =>
-        lifecycle.confirm(current, request.setupId),
+      ): Effect.Effect<ConfirmResponse, NotFound | Conflict, CurrentProfile> =>
+        Effect.flatMap(CurrentProfile, (current) =>
+          lifecycle.confirm(current, request.setupId)
+        ),
 
       decline: (
-        current: AuthenticatedProfile,
         request: DeclineRequest
-      ): Effect.Effect<DeclineResponse, NotFound | Conflict> =>
-        lifecycle.decline(current, request.setupId),
+      ): Effect.Effect<DeclineResponse, NotFound | Conflict, CurrentProfile> =>
+        Effect.flatMap(CurrentProfile, (current) =>
+          lifecycle.decline(current, request.setupId)
+        ),
 
-      setups: (current: AuthenticatedProfile): Effect.Effect<SetupsResponse> =>
-        lifecycle.listFor(current),
+      setups: (): Effect.Effect<SetupsResponse, never, CurrentProfile> =>
+        Effect.flatMap(CurrentProfile, (current) => lifecycle.listFor(current)),
     }
   }),
 }) {}

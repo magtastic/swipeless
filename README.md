@@ -124,6 +124,8 @@ only the key. The note carries a link valid for ten minutes as soon as a setup i
 checking setups returns fresh links. The admin's `/api/photos/:profileId` route checks a super-admin session or a valid
 signature on each request and sends `Cache-Control: private, no-store`. Deleting a profile
 removes its stored image. Local development can set `PHOTO_BASE_URL` to its admin origin.
+Links are signed with `PHOTO_LINK_SECRET`, which both projects must share; until it is set
+they fall back to `BLOB_READ_WRITE_TOKEN`.
 
 To migrate legacy inline photos after deploying both services, run with production database
 and Blob credentials in the environment:

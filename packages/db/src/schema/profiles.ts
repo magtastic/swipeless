@@ -72,11 +72,3 @@ export const profiles = pgTable(
 
 export type ProfileRow = typeof profiles.$inferSelect
 export type NewProfileRow = typeof profiles.$inferInsert
-
-/**
- * Profiles expire 90 days after their last check-in. There is no soft delete
- * and no SQL-side "active" filter: deletion is a hard delete with cascade, and
- * the expiry cutoff is computed from Effect's Clock and passed as a parameter
- * so TestClock can move it.
- */
-export const PROFILE_TTL_DAYS = 90

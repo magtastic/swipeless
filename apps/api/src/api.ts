@@ -27,7 +27,7 @@ import {
   SetupsResponse,
 } from '@swipeless/shared'
 import { Schema } from 'effect'
-import { CurrentProfile } from './service.ts'
+import { CurrentProfile } from './caller.ts'
 
 /**
  * The REST surface. Statuses are not declared here: every error in
