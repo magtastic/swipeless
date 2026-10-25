@@ -10,8 +10,8 @@ import { Clock, Context, Effect, Layer } from 'effect'
  * the pick, and stores the answer on the setup; it never looks inside.
  *
  * The live adapter below is deterministic and rule-based, enough for the demo:
- * a short curated list of real public cafés per city and the next Thursday
- * evening or Saturday afternoon. A model that reads both briefs replaces it
+ * a short curated list of real public cafés per city and the earliest
+ * Thursday evening or Saturday afternoon both availabilities allow. A model that reads both briefs replaces it
  * later, behind this same interface.
  */
 
@@ -118,18 +118,28 @@ const nextSlot = (slot: Slot, from: number, offsetMinutes: number): number => {
 const WEEKEND = /weekend|saturday|laugardag|helg/i
 const EVENING = /weekday|evening|thursday|after work|kvöld/i
 
+/** The slots this side's availability says it can make, possibly none. */
+const supportedSlots = (party: DateParty): ReadonlyArray<Slot> => [
+  ...(EVENING.test(party.availability) ? [THURSDAY_EVENING] : []),
+  ...(WEEKEND.test(party.availability) ? [SATURDAY_AFTERNOON] : []),
+]
+
 /**
- * Thursday evening unless both sides only talk about weekends, then Saturday
- * afternoon; with nothing to go on, whichever comes first.
+ * PRODUCT.md, The setup and the date: "a time that fits both
+ * availabilities". The slots both sides can make; empty when they share
+ * none, or when either side's text names nothing the rules recognise.
  */
-const pickSlot = (a: DateParty, b: DateParty): Slot | undefined => {
-  const both = [a.availability, b.availability]
-  if (both.every((text) => WEEKEND.test(text) && !EVENING.test(text))) {
-    return SATURDAY_AFTERNOON
-  }
-  if (both.some((text) => EVENING.test(text))) return THURSDAY_EVENING
-  return undefined
+const sharedSlots = (a: DateParty, b: DateParty): ReadonlyArray<Slot> => {
+  const theirs = supportedSlots(b)
+  return supportedSlots(a).filter((slot) => theirs.includes(slot))
 }
+
+/**
+ * With no slot both sides can make, Thursday evening, coffee and a walk
+ * after work. A deliberate guess, not a fit: a model that reads both
+ * availabilities replaces this rule later, behind the same interface.
+ */
+const FALLBACK_SLOT: Slot = THURSDAY_EVENING
 
 /** Where the date happens: a curated café in either city, else a generic one. */
 const pickVenue = (a: DateParty, b: DateParty): Venue => {
@@ -152,14 +162,12 @@ export const DateSuggesterRules = Layer.succeed(
       Effect.map(Clock.currentTimeMillis, (now) => {
         const from = now + LEAD_MS
         const offset = UTC_OFFSET_MINUTES[a.country.toUpperCase()] ?? 0
-        const preferred = pickSlot(a, b)
+        const shared = sharedSlots(a, b)
+        // The earliest shared slot at least the lead time away.
         const at =
-          preferred === undefined
-            ? Math.min(
-                nextSlot(THURSDAY_EVENING, from, offset),
-                nextSlot(SATURDAY_AFTERNOON, from, offset)
-              )
-            : nextSlot(preferred, from, offset)
+          shared.length === 0
+            ? nextSlot(FALLBACK_SLOT, from, offset)
+            : Math.min(...shared.map((slot) => nextSlot(slot, from, offset)))
 
         return new DateSuggestion({
           venue: pickVenue(a, b),

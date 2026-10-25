@@ -64,6 +64,36 @@ describe('DateSuggesterRules', () => {
     expect(date.time).toBe('2026-10-24T15:00:00.000Z')
   })
 
+  test('picks a slot both can make, not just one of them', async () => {
+    const date = await suggestAt(
+      MONDAY_NOON,
+      party(A, { availability: 'saturday afternoons' }),
+      party(B, { availability: 'thursday evenings, saturday afternoons' })
+    )
+    expect(date.time).toBe('2026-10-24T15:00:00.000Z')
+  })
+
+  /** Wednesday noon: the lead time puts Saturday before the next Thursday. */
+  const WEDNESDAY_NOON = Date.parse('2026-10-21T12:00:00Z')
+
+  test('with no slot in common, falls back to Thursday evening', async () => {
+    const date = await suggestAt(
+      WEDNESDAY_NOON,
+      party(A, { availability: 'weekends' }),
+      party(B, { availability: 'thursday evenings' })
+    )
+    expect(date.time).toBe('2026-10-29T19:30:00.000Z')
+  })
+
+  test('with nothing recognisable, falls back to Thursday evening', async () => {
+    const date = await suggestAt(
+      WEDNESDAY_NOON,
+      party(A, { availability: 'whenever suits' }),
+      party(B, { availability: 'flexible' })
+    )
+    expect(date.time).toBe('2026-10-29T19:30:00.000Z')
+  })
+
   test('never sooner than two days out', async () => {
     // Wednesday evening: this Thursday is a day away, so next week's.
     const date = await suggestAt(

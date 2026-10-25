@@ -153,11 +153,15 @@ const countProfiles = (at: number) =>
 
 /**
  * Grouped by the status the agents actually see. `setups.ts` in the API reads
- * an unsettled row whose `expiresAt` has passed as `expired` and never trusts
- * the stored column; the CASE below is that rule in SQL, so the console's
- * numbers cannot drift from the product's.
+ * an unsettled row as `expired` once its `expiresAt` has passed (PRODUCT.md:
+ * "A setup with no transition for fourteen days expires") or once its
+ * suggested date time has, and never trusts the stored column. The CASE below
+ * is that rule in SQL, so the console's numbers cannot drift from the
+ * product's.
+ *
+ * Exported for tests.
  */
-const countSetups = (at: number) =>
+export const countSetups = (at: number) =>
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle
     const now = new Date(at).toISOString()
@@ -165,6 +169,7 @@ const countSetups = (at: number) =>
       when ${setups.status} in ('confirmed', 'declined', 'expired')
         then ${setups.status}
       when ${setups.expiresAt} <= ${now}::timestamptz
+        or (${setups.date}->>'time')::timestamptz <= ${now}::timestamptz
         then 'expired'::setup_status
       else ${setups.status}
     end`

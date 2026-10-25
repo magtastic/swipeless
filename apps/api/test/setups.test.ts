@@ -690,6 +690,159 @@ describeDb('SetupLifecycle', () => {
   })
 
   /* ------------------------------------------------------------------ */
+  /*  Crossing yeses                                                    */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Two yeses can reach the guarded write at once. Each case runs a number
+   * of times, from an empty table, so an unlucky interleaving has a chance
+   * to show up: the stored flags, the status, who got a phone number and who
+   * heard what must come out the same however the two calls cross.
+   * PRODUCT.md: "When both say yes, both get the other's phone number."
+   */
+  describe('confirm, concurrently', () => {
+    const ROUNDS = 10
+
+    const kinds = (kind: 'dateRequested' | 'dateConfirmed') =>
+      notifications.filter((one) => one.kind === kind)
+
+    /** The stored yes of one profile, whichever side of the pair it is. */
+    const flagOf = (
+      row: { profileAId: string; confirmedA: boolean; confirmedB: boolean },
+      profileId: ProfileId
+    ) => (row.profileAId === profileId ? row.confirmedA : row.confirmedB)
+
+    test('both sides saying yes at once confirm the date exactly once', async () => {
+      for (let round = 0; round < ROUNDS; round++) {
+        notifications.length = 0
+        await runtime.runPromise(truncateAll)
+        const result = await run(
+          Effect.gen(function* () {
+            const lifecycle = yield* SetupLifecycle
+            const pair = yield* picked
+            // Both agents picked, so the suggested setup is visible to both.
+            yield* lifecycle.expressInterest(caller(pair.jon), pair.sigrun)
+
+            const [sigrunYes, jonYes] = yield* Effect.all(
+              [
+                lifecycle.confirm(caller(pair.sigrun), pair.setupId),
+                lifecycle.confirm(caller(pair.jon), pair.setupId),
+              ],
+              { concurrency: 'unbounded' }
+            )
+            const row = yield* rowOf(pair.setupId)
+            return { ...pair, sigrunYes, jonYes, row }
+          })
+        )
+
+        expect(result.row?.status).toBe('confirmed')
+        expect(result.row?.confirmedA).toBe(true)
+        expect(result.row?.confirmedB).toBe(true)
+
+        // One yes landed first and became the request; the other confirmed
+        // and carries the phone number. Never both, never neither.
+        const answers = [result.sigrunYes, result.jonYes]
+        expect(answers.map((one) => one.status).sort()).toEqual([
+          'confirmed',
+          'requested',
+        ])
+        for (const [one, phone] of [
+          [result.sigrunYes, PHONES.Jón],
+          [result.jonYes, PHONES.Sigrún],
+        ] as const) {
+          expect(one.privateLayer?.phone).toBe(
+            one.status === 'confirmed' ? phone : undefined
+          )
+        }
+
+        expect(kinds('dateRequested').length).toBeLessThanOrEqual(1)
+        expect(
+          kinds('dateConfirmed')
+            .map((one) => one.profileId)
+            .sort()
+        ).toEqual([result.sigrun, result.jon].sort())
+      }
+    })
+
+    test('one side saying yes twice at once is one yes', async () => {
+      for (let round = 0; round < ROUNDS; round++) {
+        notifications.length = 0
+        await runtime.runPromise(truncateAll)
+        const result = await run(
+          Effect.gen(function* () {
+            const lifecycle = yield* SetupLifecycle
+            const pair = yield* picked
+
+            const yeses = yield* Effect.all(
+              [
+                lifecycle.confirm(caller(pair.sigrun), pair.setupId),
+                lifecycle.confirm(caller(pair.sigrun), pair.setupId),
+              ],
+              { concurrency: 'unbounded' }
+            )
+            const row = yield* rowOf(pair.setupId)
+            return { ...pair, yeses, row }
+          })
+        )
+
+        expect(result.row?.status).toBe('requested')
+        if (result.row === undefined) throw new Error('setup row is missing')
+        expect(flagOf(result.row, result.sigrun)).toBe(true)
+        expect(flagOf(result.row, result.jon)).toBe(false)
+        for (const yes of result.yeses) {
+          expect(yes.status).toBe('requested')
+          expect(yes.privateLayer).toBeUndefined()
+        }
+        expect(notifications).toEqual([
+          {
+            kind: 'dateRequested',
+            profileId: result.jon,
+            setupId: result.setupId,
+          },
+        ])
+      }
+    })
+
+    test('the second side saying yes twice at once confirms once', async () => {
+      for (let round = 0; round < ROUNDS; round++) {
+        notifications.length = 0
+        await runtime.runPromise(truncateAll)
+        const result = await run(
+          Effect.gen(function* () {
+            const lifecycle = yield* SetupLifecycle
+            const pair = yield* requested
+
+            const yeses = yield* Effect.all(
+              [
+                lifecycle.confirm(caller(pair.jon), pair.setupId),
+                lifecycle.confirm(caller(pair.jon), pair.setupId),
+              ],
+              { concurrency: 'unbounded' }
+            )
+            const row = yield* rowOf(pair.setupId)
+            return { ...pair, yeses, row }
+          })
+        )
+
+        expect(result.row?.status).toBe('confirmed')
+        expect(result.row?.confirmedA).toBe(true)
+        expect(result.row?.confirmedB).toBe(true)
+        // Saying yes twice is the same yes: both answers release the number.
+        for (const yes of result.yeses) {
+          expect(yes.status).toBe('confirmed')
+          expect(yes.privateLayer?.phone).toBe(PHONES.Sigrún)
+        }
+        expect(kinds('dateRequested')).toHaveLength(1)
+        expect(
+          kinds('dateConfirmed')
+            .map((one) => one.profileId)
+            .sort()
+        ).toEqual([result.sigrun, result.jon].sort())
+      }
+    })
+  })
+
+  /* ------------------------------------------------------------------ */
   /*  The no                                                            */
   /* ------------------------------------------------------------------ */
 
