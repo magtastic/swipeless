@@ -214,7 +214,8 @@ bend it, noted below.
 
 - The domain is `swipeless.me`, bought through Vercel under `smitten-server`. The marketing site
   is at the apex, the API and MCP at `api.swipeless.me`, and the admin at `admin.swipeless.me`.
-  Each one is attached to its Vercel project. This closes "Pick and buy a domain" from the
+  Each one is attached to its Vercel project, and `www.swipeless.me` redirects to the apex
+  (308). This closes "Pick and buy a domain" from the
   2026-09-11 entry.
 - Code defaults, the skill, llms.txt and the site's canonical links all name the new hosts. The
   `swipeless-*.vercel.app` addresses keep working, so installed skills and links in emails

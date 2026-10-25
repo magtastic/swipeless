@@ -57,7 +57,7 @@ All three are Vercel projects under the `smitten-server` team. None is connected
 Vercel's side, deliberately: GitHub Actions owns deployment, so the tests gate it.
 
 The domain `swipeless.me` is registered through Vercel under the same team, on Vercel's
-nameservers. The old `swipeless-*.vercel.app` addresses still answer. The skill hardcodes the API
+nameservers. `www.swipeless.me` redirects to the apex with a 308. The old `swipeless-*.vercel.app` addresses still answer. The skill hardcodes the API
 URL, so moving it is also a skill release.
 
 - `.github/workflows/pr.yml` runs on pull requests to `main`. Pushes to `main` are verified by
