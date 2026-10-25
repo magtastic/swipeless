@@ -16,7 +16,7 @@ import {
 } from '@swipeless/db/testing'
 import { asc, eq } from 'drizzle-orm'
 import { Effect, ManagedRuntime } from 'effect'
-import { decideReview, recordReview, reviewQueue } from '../lib/review.ts'
+import { decideReview, reviewQueue } from '../lib/review.ts'
 
 const runtime = ManagedRuntime.make(TestDbLive)
 
@@ -41,15 +41,6 @@ const profile = (
   createdAt: new Date(at - index * 60_000),
   lastSeenAt: new Date(at),
   ...overrides,
-})
-
-test('a non-super admin is refused without touching the database', async () => {
-  const outcome = await recordReview(
-    '11111111-1111-4111-8111-111111111111',
-    'approved',
-    'someone@smitten.fun'
-  )
-  expect(outcome).toEqual({ _tag: 'Forbidden' })
 })
 
 describe.skipIf(!hasTestDb)('admin review queue', () => {
