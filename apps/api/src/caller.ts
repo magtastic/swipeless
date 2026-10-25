@@ -1,9 +1,10 @@
 import { PgDrizzle } from '@swipeless/db'
+import { isLive } from '@swipeless/db/rules'
 import { profiles } from '@swipeless/db/schema'
 import { Gone, Unauthorized } from '@swipeless/shared'
 import { eq } from 'drizzle-orm'
 import { Clock, Effect, Redacted } from 'effect'
-import { type AuthenticatedProfile, PROFILE_TTL_MS } from './service.ts'
+import type { AuthenticatedProfile } from './service.ts'
 import { hashToken } from './token.ts'
 
 /**
@@ -73,7 +74,7 @@ export class Caller extends Effect.Service<Caller>()('Caller', {
           if (row === undefined) {
             return yield* new Unauthorized()
           }
-          if (row.lastSeenAt.getTime() <= millis - PROFILE_TTL_MS) {
+          if (!isLive(row.lastSeenAt, millis)) {
             return yield* new Gone()
           }
 

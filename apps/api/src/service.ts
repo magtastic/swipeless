@@ -1,5 +1,6 @@
 import { EmbeddingModel } from '@effect/ai'
 import { PgDrizzle } from '@swipeless/db'
+import { effectiveStatus, isLiveSql } from '@swipeless/db/rules'
 import { adminEvents, profiles, setups } from '@swipeless/db/schema'
 import { PhotoStorage } from '@swipeless/photos'
 import {
@@ -26,14 +27,13 @@ import {
   arrayContains,
   cosineDistance,
   eq,
-  gt,
   inArray,
   ne,
   notInArray,
   or,
 } from 'drizzle-orm'
 import { Array as Arr, Clock, Context, Effect } from 'effect'
-import { effectiveStatus, SetupLifecycle } from './setups.ts'
+import { SetupLifecycle } from './setups.ts'
 import { generateToken, hashToken } from './token.ts'
 
 /**
@@ -48,9 +48,6 @@ export class CurrentProfile extends Context.Tag('CurrentProfile')<
   CurrentProfile,
   AuthenticatedProfile
 >() {}
-
-/** PRODUCT.md: "Profiles expire automatically after ninety days without a check-in." */
-export const PROFILE_TTL_MS = 90 * 24 * 60 * 60 * 1000
 
 /**
  * The service. The HttpApi handlers and the MCP tools both call these methods
@@ -155,7 +152,6 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
       ): Effect.Effect<CandidatesResponseType> =>
         Effect.gen(function* () {
           const at = yield* now
-          const activeSince = new Date(at.getTime() - PROFILE_TTL_MS)
 
           const callers = yield* db
             .select({
@@ -229,7 +225,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .where(
               and(
                 eq(profiles.reviewStatus, 'approved'),
-                gt(profiles.lastSeenAt, activeSince),
+                isLiveSql(at.getTime()),
                 ne(profiles.id, current.profileId),
                 eq(profiles.country, caller.country),
                 inArray(profiles.gender, [...caller.interestedIn]),

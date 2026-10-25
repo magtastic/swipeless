@@ -1,10 +1,12 @@
 import { DbLive, PgDrizzle } from '@swipeless/db'
 import {
-  adminEvents,
-  PROFILE_TTL_DAYS,
-  profiles,
-  setups,
-} from '@swipeless/db/schema'
+  DAY_MS,
+  effectiveStatusSql,
+  isLive,
+  isLiveSql,
+  liveSince,
+} from '@swipeless/db/rules'
+import { adminEvents, profiles, setups } from '@swipeless/db/schema'
 import { isPhotoKey } from '@swipeless/photos'
 import {
   REVIEW_STATUSES,
@@ -12,7 +14,7 @@ import {
   SETUP_STATUSES,
   type SetupStatus,
 } from '@swipeless/shared'
-import { desc, inArray, sql } from 'drizzle-orm'
+import { and, desc, inArray, lte, not, sql } from 'drizzle-orm'
 import { Cause, Clock, Effect, Schema } from 'effect'
 import { isSuperAdmin } from './access.ts'
 
@@ -29,8 +31,6 @@ import { isSuperAdmin } from './access.ts'
  * admin, identified by a verified session email. Token hashes are never
  * selected.
  */
-
-const DAY_MS = 24 * 60 * 60 * 1000
 
 /** How close to the 90-day cutoff counts as "about to go". */
 const EXPIRING_SOON_DAYS = 7
@@ -107,24 +107,19 @@ export type DashboardResult =
 const countProfiles = (at: number) =>
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle
-    const dead = new Date(at - PROFILE_TTL_DAYS * DAY_MS).toISOString()
-    const soon = new Date(
-      at - (PROFILE_TTL_DAYS - EXPIRING_SOON_DAYS) * DAY_MS
-    ).toISOString()
+    const live = isLiveSql(at)
+    // Live now, gone by the time a week has passed.
+    const expiring = and(
+      live,
+      lte(profiles.lastSeenAt, liveSince(at + EXPIRING_SOON_DAYS * DAY_MS))
+    )
 
     const rows = yield* db
       .select({
         total: sql<number>`count(*)::int`,
-        live: sql<number>`(count(*) filter (
-          where ${profiles.lastSeenAt} > ${dead}::timestamptz
-        ))::int`,
-        expiringSoon: sql<number>`(count(*) filter (
-          where ${profiles.lastSeenAt} > ${dead}::timestamptz
-            and ${profiles.lastSeenAt} <= ${soon}::timestamptz
-        ))::int`,
-        expired: sql<number>`(count(*) filter (
-          where ${profiles.lastSeenAt} <= ${dead}::timestamptz
-        ))::int`,
+        live: sql<number>`(count(*) filter (where ${live}))::int`,
+        expiringSoon: sql<number>`(count(*) filter (where ${expiring}))::int`,
+        expired: sql<number>`(count(*) filter (where ${not(live)}))::int`,
         pending: sql<number>`(count(*) filter (
           where ${profiles.reviewStatus} = 'pending'
         ))::int`,
@@ -152,27 +147,16 @@ const countProfiles = (at: number) =>
   })
 
 /**
- * Grouped by the status the agents actually see. `setups.ts` in the API reads
- * an unsettled row as `expired` once its `expiresAt` has passed (PRODUCT.md:
- * "A setup with no transition for fourteen days expires") or once its
- * suggested date time has, and never trusts the stored column. The CASE below
- * is that rule in SQL, so the console's numbers cannot drift from the
- * product's.
+ * Grouped by the status the agents actually see: the same `effectiveStatus`
+ * rule the API answers from, in its SQL form, so the console's numbers cannot
+ * drift from the product's.
  *
  * Exported for tests.
  */
 export const countSetups = (at: number) =>
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle
-    const now = new Date(at).toISOString()
-    const status = sql<SetupStatus>`case
-      when ${setups.status} in ('confirmed', 'declined', 'expired')
-        then ${setups.status}
-      when ${setups.expiresAt} <= ${now}::timestamptz
-        or (${setups.date}->>'time')::timestamptz <= ${now}::timestamptz
-        then 'expired'::setup_status
-      else ${setups.status}
-    end`
+    const status = effectiveStatusSql(at)
 
     /**
      * By ordinal, not by the expression again: drizzle qualifies column
@@ -282,7 +266,7 @@ export const profileOverviews = (
           ...superById.get(row.id),
           createdAt: row.createdAt.toISOString(),
           lastSeenAt: row.lastSeenAt.toISOString(),
-          expired: row.lastSeenAt.getTime() <= at - PROFILE_TTL_DAYS * DAY_MS,
+          expired: !isLive(row.lastSeenAt, at),
         })
       ),
       hasMoreProfiles: rows.length > PROFILE_PAGE_SIZE,
