@@ -176,7 +176,7 @@ describe.skipIf(!hasTestDb)('confirmed dates and the follow-up', () => {
     expect(result.listed.dates[0]?.followUpSentAt).not.toBeNull()
   })
 
-  test('refuses a date that has not happened yet, leaving it unstamped', async () => {
+  test('an upcoming confirmed date can be asked about too', async () => {
     const result = await runtime.runPromise(
       Effect.gen(function* () {
         const upcoming = yield* pair(
@@ -184,13 +184,11 @@ describe.skipIf(!hasTestDb)('confirmed dates and the follow-up', () => {
           ['a@example.com', null],
           '2099-09-17T19:30:00.000Z'
         )
-        const early = yield* followUp(upcoming.setupId, SUPER)
-        const listed = yield* confirmedDates(SUPER)
-        return { early, stamp: listed.dates[0]?.followUpSentAt }
+        return yield* followUp(upcoming.setupId, SUPER)
       })
     )
-    expect(result).toEqual({ early: { _tag: 'NotSendable' }, stamp: null })
-    expect(mailer.sent).toEqual([])
+    expect(result).toEqual({ _tag: 'Sent', emailed: 1 })
+    expect(mailer.sent).toHaveLength(1)
   })
 
   test('refuses unconfirmed setups and pairs with no email, writing nothing', async () => {

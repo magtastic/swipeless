@@ -251,9 +251,7 @@ function DateRow({
           Asked {dateTime(date.followUpSentAt)}
         </p>
       ) : canSend ? (
-        !past ? (
-          <p className="shrink-0 text-sm text-soft">Ask after the date</p>
-        ) : anyEmail ? (
+        anyEmail ? (
           <form action={followUpDate} className="shrink-0">
             <input type="hidden" name="setupId" value={date.id} />
             <button
@@ -279,8 +277,8 @@ function Dates({ confirmed, now }: { confirmed: ConfirmedDates; now: number }) {
           Confirmed dates
         </h2>
         <p className="mt-1 text-sm text-soft">
-          Both said yes. Latest date first. After the date, ask both how it
-          went: one email each, replies come to the inbox.
+          Both said yes. Latest date first. Ask both how it went: one email
+          each, replies come to the inbox.
           {!confirmed.canSend &&
             ' Only the super admin can send the follow-up.'}
         </p>
