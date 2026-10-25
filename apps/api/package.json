@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./act-as": "./src/act-as.ts"
+  },
   "scripts": {
     "dev": "bun --env-file=../../.env run --hot src/dev.ts",
     "build": "bun build src/entry.ts --target=node --format=esm --outfile=dist/entry.js",
@@ -12,8 +15,7 @@
     "approve": "bun --env-file=../../.env scripts/approve.ts"
   },
   "dependencies": {
-    "@swipeless/db": "workspace:*",
-    "@swipeless/shared": "workspace:*",
+    "@anthropic-ai/sdk": "^1.3.0",
     "@effect/ai": "catalog:",
     "@effect/ai-openai": "catalog:",
     "@effect/experimental": "catalog:",
@@ -21,9 +23,12 @@
     "@effect/platform-bun": "catalog:",
     "@effect/rpc": "catalog:",
     "@effect/sql": "catalog:",
+    "@swipeless/db": "workspace:*",
+    "@swipeless/email": "workspace:*",
+    "@swipeless/photos": "workspace:*",
+    "@swipeless/shared": "workspace:*",
     "drizzle-orm": "catalog:",
-    "effect": "catalog:",
-    "@swipeless/photos": "workspace:*"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

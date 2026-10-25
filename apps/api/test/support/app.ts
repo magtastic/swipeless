@@ -5,6 +5,8 @@ import {
   TestDbLive,
   truncateAll,
 } from '@swipeless/db/testing'
+import type { Email } from '@swipeless/email'
+import { recordingMailer } from '@swipeless/email/testing'
 import {
   makeProfilePhotos,
   memoryBlobStore,
@@ -39,6 +41,7 @@ import { Swipeless } from '../../src/service.ts'
  * - OpenAI: embeddings are a hash of the brief, so ranking is reproducible.
  * - Vercel Blob: photos live in a Map. Image validation and link signing run real.
  * - SMS: the notifier records who would have been told what.
+ * - Resend: the mailer the admin console's approval uses keeps its emails.
  * - The wall clock: frozen at START until a test travels, so expiry, the weekly
  *   cap and the suggested date are exact.
  *
@@ -76,6 +79,8 @@ export type App = {
   ) => boolean
   /** Every message the service asked to send, oldest first. */
   readonly notifications: ReadonlyArray<Notification>
+  /** Every email the admin console sent, oldest first. */
+  readonly emails: ReadonlyArray<Email>
   /** The reviewer approves a profile in the admin console. */
   readonly approve: (...profileIds: ReadonlyArray<ProfileId>) => Promise<void>
   /** Reads straight from the database, for what no endpoint shows. */
@@ -128,6 +133,8 @@ export const openApp = (options: AppOptions = {}): App => {
     })
   )
 
+  const mailer = recordingMailer()
+
   const config =
     options.weeklyCap === undefined
       ? Layer.empty
@@ -142,6 +149,7 @@ export const openApp = (options: AppOptions = {}): App => {
     Layer.provide(DateSuggesterRules),
     Layer.provide(RecordingNotifier),
     Layer.provide(Photos),
+    Layer.provideMerge(mailer.layer),
     Layer.provideMerge(TestDbLive),
     Layer.provide(config),
     Layer.provide(Layer.setClock(clock)),
@@ -167,6 +175,7 @@ export const openApp = (options: AppOptions = {}): App => {
           .pipe(Effect.withClock(clockReading(() => when)))
       ),
     notifications,
+    emails: mailer.sent,
     approve: async (...profileIds) => {
       for (const profileId of profileIds) {
         const outcome = await runtime.runPromise(
@@ -183,6 +192,7 @@ export const openApp = (options: AppOptions = {}): App => {
       at = START
       photos.clear()
       notifications.length = 0
+      mailer.sent.length = 0
       if (!migrated) {
         await runtime.runPromise(migrate)
         migrated = true

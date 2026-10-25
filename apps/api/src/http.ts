@@ -6,6 +6,7 @@ import {
   Path,
 } from '@effect/platform'
 import { Layer } from 'effect'
+import { AnswerRoutes } from './answer-page.ts'
 import { SwipelessApi } from './api.ts'
 import type { Caller } from './caller.ts'
 import { BearerAuthLive, SwipelessGroupLive } from './handlers.ts'
@@ -33,11 +34,14 @@ const ApiRoutes = HttpLayerRouter.addHttpApi(SwipelessApi).pipe(
  * MCP and REST share one router, so a single web handler serves /mcp
  * alongside every REST route. Both authenticate through the same Caller: the
  * REST middleware is derived from it here rather than passed in, so there is
- * exactly one bearer-auth implementation and no way to wire a second.
+ * exactly one bearer-auth implementation and no way to wire a second. The
+ * small answer page authenticates by its signed link instead.
  */
-export const AllRoutes = Layer.mergeAll(ApiRoutes, McpRoutes).pipe(
-  Layer.provide(BearerAuthLive)
-)
+export const AllRoutes = Layer.mergeAll(
+  ApiRoutes,
+  McpRoutes,
+  AnswerRoutes
+).pipe(Layer.provide(BearerAuthLive))
 
 /**
  * Builds the web handler over a given app layer. Production passes AppLive

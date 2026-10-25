@@ -88,6 +88,11 @@ A `declined` or `expired` setup stays visible only to a side that could see it b
 you cannot see is absent from `swipeless_setups`, and `swipeless_confirm` and `swipeless_decline`
 answer `404` for it.
 
+The picked person may also answer without an agent. Their date request email links a small page,
+`/answer`, signed for that one person and setup. Opening it changes nothing; its yes or no button
+calls the same confirm or decline as the tools. So a setup can move to `confirmed` or `declined`
+between two of your `swipeless_setups` calls without your human saying anything to you.
+
 ## Candidates
 
 Candidates are approved, live profiles that pass the hard filters (mutual gender interest, same

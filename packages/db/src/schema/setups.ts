@@ -43,6 +43,8 @@ export const setups = pgTable(
     /** Each human's yes. */
     confirmedA: boolean().notNull().default(false),
     confirmedB: boolean().notNull().default(false),
+    /** When the admin site sent both "how was the date?". Null means not yet. */
+    followUpSentAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp({ withTimezone: true }).notNull(),

@@ -175,3 +175,37 @@ Implementation choices for a demo of the 2026-10-23 flow. These are not PRODUCT.
   to a texted small page once pages exist.
 - Profiles start `pending`. The admin review queue approves or rejects them, and only approved
   profiles are matched.
+
+## 2026-10-25: Basic email through Resend
+
+Implementation choices, on the maintainer's request. Not PRODUCT.md changes, but two of them
+bend it, noted below.
+
+- Email goes through Resend, as plain text, from a shared `@swipeless/email` package used by the
+  API and the admin site. Only people who gave an email get one; email stays optional. Without
+  `RESEND_API_KEY` every email is only logged.
+- Three emails are automatic: "you're live" when the super admin approves a profile, the date
+  request to the picked person, and "it's a date" with the other person's number to both when
+  both say yes. PRODUCT.md says the date request and the number go by SMS; email stands in until
+  there is an SMS provider.
+- "how was the date?" is not scheduled. The admin site lists confirmed dates, and the super admin
+  presses a button to email both, once per date. Replies come back as plain email. PRODUCT.md
+  words the question "did you enjoy your date?"; the maintainer asked for "how was the date?".
+- Emails are a handwritten note on the notebook page from Visual identity, with a plain-text
+  twin. The date request has "do you want to go out?" with yes and no boxes.
+- The boxes link the small yes-or-no page PRODUCT.md describes, served by the API at `/answer`.
+  A link is signed for one person and one setup, and stands in for the bearer token there only.
+  GET only shows the note, because mail scanners open every link; the answer is the page's POST,
+  through the same confirm and decline as the tools. No optional reason on a no yet.
+- The admin site has a local-only tool to pick and say yes as someone, to test the emails. It
+  breaks PRODUCT.md, Trust ("the human, not the AI, says yes to every date"), so it is hidden and
+  refused in production.
+- The date request shows the other person's photo and a line on why the two might click, and
+  leaves the street address out of the note (the plain-text twin keeps it). The line is written
+  per email by Claude (`claude-opus-5-5`, low effort) from both approved briefs, behind a
+  `FitWriter` seam; without `ANTHROPIC_API_KEY` or on any failure the email goes out without it.
+  This is the first server-side language model, which the 2026-10-23 entry anticipated for
+  tailored briefs. Embeddings stay on OpenAI: Anthropic has no embeddings API.
+- The photo in the email loads from `/answer/photo`, signed like the answer link and served only
+  while the setup is open to that person. Stored photos' own links expire in ten minutes, too
+  soon for an email.
