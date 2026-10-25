@@ -48,7 +48,8 @@
     "db:down": "docker compose down",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "get:env": "op inject -f -i .env.template -o .env"
+    "get:env:dev": "op inject -f -i .env.template.dev -o .env",
+    "get:env:prod": "op inject -f -i .env.template.prod -o .env"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",

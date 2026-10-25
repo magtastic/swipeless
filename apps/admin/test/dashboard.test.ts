@@ -67,11 +67,14 @@ describe.skipIf(!hasTestDb)('admin profile overviews', () => {
     expect(result.second.overviews[0]?.expired).toBe(true)
     expect(result.second.hasMoreProfiles).toBe(false)
     expect(result.empty.overviews).toEqual([])
-    expect(result.superAdmin.overviews[0]?.privateDetails).toEqual({
+    expect(result.first.overviews[0]?.reviewStatus).toBe('pending')
+    expect(result.superAdmin.overviews[0]?.note).toEqual({
       firstName: 'Private name',
+      photoUrl: `/api/photos/${result.superAdmin.overviews[0]?.id}`,
+    })
+    expect(result.superAdmin.overviews[0]?.privateDetails).toEqual({
       phone: '+3548221234',
       email: 'private@example.com',
-      photoUrl: `/api/photos/${result.superAdmin.overviews[0]?.id}`,
       standingInstructions: 'Private instructions',
     })
     expect(JSON.stringify(result.superAdmin)).not.toContain('secret-token')

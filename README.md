@@ -2,8 +2,9 @@
 
 No swiping. No small talk. Just a date.
 
-Your agent gets to know you, finds someone worth meeting, and sends you a note with a time and
-place.
+Your AI finds someone worth meeting and sends you one message with their name, a photo, a time
+and a place. You say yes or no. When you both say yes, you get each other's numbers. A person at
+swipeless checks every profile before it goes live.
 
 Read [PRODUCT.md](PRODUCT.md) first. It is the source of truth for what this is.
 
@@ -35,7 +36,8 @@ docs/           Decision log
 
 ```sh
 bun install
-bun run get:env      # materialize .env from 1Password (op CLI, signed in)
+bun run get:env:dev  # .env for local work: secrets from 1Password, the docker database
+                     # (get:env:prod writes production values; only for deliberate prod work)
 bun run db:up        # local Postgres with pgvector on :5434
 bun run db:migrate
 bun run dev
@@ -69,7 +71,7 @@ running services need is a Vercel project environment variable, not an Actions s
 | Secret | Where it comes from |
 |---|---|
 | `VERCEL_TOKEN` | vercel.com → Account Settings → Tokens, scoped to the `smitten-server` team |
-| `DATABASE_URL` | 1Password, item `swipeless/DATABASE_URL`. Same value as `bun run get:env` writes. The role must be allowed `CREATE EXTENSION vector` |
+| `DATABASE_URL` | 1Password, item `DEV - swipeless/DATABASE_URL`. Same value as `bun run get:env:prod` writes. The role must be allowed `CREATE EXTENSION vector` |
 
 ### Releasing the skill
 
@@ -114,11 +116,11 @@ id for the admin.
 Uploaded photos live in the private Vercel Blob store `swipeless-photos`. The database's
 `profiles.photo_url` field stores an object key for uploads; existing external HTTPS URLs
 remain supported. `BLOB_READ_WRITE_TOKEN` is configured on the API and admin production
-projects and stored in the `swipeless` 1Password vault.
+projects and stored in the `DEV - swipeless` 1Password vault.
 
 Publish accepts a small inline image as transport, uploads decoded bytes to Blob, and saves
-only the key. Confirmed matches receive links valid for ten minutes; checking setups returns
-fresh links. The admin's `/api/photos/:profileId` route checks a super-admin session or a valid
+only the key. The note carries a link valid for ten minutes as soon as a setup is visible;
+checking setups returns fresh links. The admin's `/api/photos/:profileId` route checks a super-admin session or a valid
 signature on each request and sends `Cache-Control: private, no-store`. Deleting a profile
 removes its stored image. Local development can set `PHOTO_BASE_URL` to its admin origin.
 

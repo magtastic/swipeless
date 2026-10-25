@@ -18,7 +18,7 @@ class PhotoUploadTest(unittest.TestCase):
             photo = root / "photo.png"
             output = root / "publish.json"
             original = {"brief": "Approved brief", "email": "example@example.com",
-                        "privateLayer": {"firstName": "Test", "phone": "+3548221234"}}
+                        "firstName": "Test", "privateLayer": {"phone": "+3548221234"}}
             profile.write_text(json.dumps(original))
             source = Image.new("RGB", (2200, 1700), "blue")
             exif = Image.Exif()
@@ -27,7 +27,7 @@ class PhotoUploadTest(unittest.TestCase):
             original_bytes = photo.read_bytes()
             attach_photo(profile, photo, output)
             result = json.loads(output.read_text())
-            data_uri = result["privateLayer"].pop("photoUrl")
+            data_uri = result.pop("photoUrl")
             self.assertEqual(result, original)
             self.assertEqual(photo.read_bytes(), original_bytes)
             self.assertEqual(output.stat().st_mode & 0o777, 0o600)
@@ -47,7 +47,7 @@ class PhotoUploadTest(unittest.TestCase):
             profile = root / "profile.json"
             photo = root / "fake.jpg"
             output = root / "publish.json"
-            profile.write_text('{"privateLayer": {}}')
+            profile.write_text('{"firstName": "Test"}')
             photo.write_text("not an image")
             with self.assertRaises(OSError):
                 attach_photo(profile, photo, output)

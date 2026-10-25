@@ -23,6 +23,8 @@ import {
 } from './support/app-handler.ts'
 import { callTool, initialize } from './support/mcp-client.ts'
 import { TestPhotos } from './support/photos.ts'
+import { approve } from './support/review.ts'
+import { TestSeams } from './support/seams.ts'
 
 /**
  * Authentication end to end: real database, real Caller, real service, both
@@ -49,6 +51,7 @@ if (!hasTestDb) {
 const AppLayer = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
   Layer.provide(EmbeddingModelDeterministic),
   Layer.provide(TestPhotos),
+  Layer.provide(TestSeams),
   Layer.provideMerge(TestDbLive)
 )
 
@@ -77,12 +80,15 @@ const profileArgs = (
   radiusKm: 25,
   availability: 'weekday evenings, sunday afternoons',
   brief,
-  privateLayer: { firstName, phone: '+3548221234' },
+  firstName,
+  photoUrl: `https://example.invalid/${firstName}.jpg`,
+  privateLayer: { phone: '+3548221234' },
 })
 
 type Published = { readonly profileId: string; readonly token: string }
 type Candidates = { readonly candidates: ReadonlyArray<{ profileId: string }> }
 
+/** Publishes over MCP, then approves, standing in for the review queue. */
 const publish = async (
   handler: WebHandler,
   session: string | null,
@@ -90,7 +96,9 @@ const publish = async (
 ): Promise<Published> => {
   const json = await callTool(handler, 'swipeless_publish', args, { session })
   expect(json.result.isError).toBeFalsy()
-  return json.result.structuredContent as Published
+  const published = json.result.structuredContent as Published
+  await runtime.runPromise(approve(published.profileId))
+  return published
 }
 
 const describeDb = hasTestDb ? describe : describe.skip

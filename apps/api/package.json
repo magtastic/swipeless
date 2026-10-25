@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --hot src/dev.ts",
+    "dev": "bun --env-file=../../.env run --hot src/dev.ts",
     "build": "bun build src/entry.ts --target=node --format=esm --outfile=dist/entry.js",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "seed:demo": "bun --env-file=../../.env scripts/seed-demo.ts",
+    "approve": "bun --env-file=../../.env scripts/approve.ts"
   },
   "dependencies": {
     "@swipeless/db": "workspace:*",

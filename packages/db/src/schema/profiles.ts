@@ -1,4 +1,4 @@
-import { GENDERS } from '@swipeless/shared'
+import { GENDERS, REVIEW_STATUSES } from '@swipeless/shared'
 import {
   index,
   integer,
@@ -14,6 +14,8 @@ import {
 export const EMBEDDING_DIMENSIONS = 1536
 
 export const genderEnum = pgEnum('gender', GENDERS)
+
+export const reviewStatusEnum = pgEnum('review_status', REVIEW_STATUSES)
 
 export const profiles = pgTable(
   'profiles',
@@ -35,10 +37,20 @@ export const profiles = pgTable(
     brief: text().notNull(),
     embedding: vector({ dimensions: EMBEDDING_DIMENSIONS }),
 
-    // Private layer, released only on a confirmed date
+    // Shown in the note, to the one person a date is with
     firstName: text().notNull(),
-    phone: text().notNull(),
+    /**
+     * Required by the contract. Nullable here only so profiles published
+     * before photos were required still load.
+     */
     photoUrl: text(),
+
+    // Private layer, released only when both say yes
+    phone: text().notNull(),
+
+    /** A person checks every profile before it goes live. Only approved ones match. */
+    reviewStatus: reviewStatusEnum().notNull().default('pending'),
+    reviewedAt: timestamp({ withTimezone: true }),
 
     email: text(),
     standingInstructions: text(),
@@ -54,6 +66,7 @@ export const profiles = pgTable(
     ),
     index('profiles_last_seen_at_idx').on(table.lastSeenAt),
     index('profiles_location_idx').on(table.country, table.city),
+    index('profiles_review_status_idx').on(table.reviewStatus),
   ]
 )
 

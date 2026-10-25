@@ -1,4 +1,4 @@
-import { type Proposal, SETUP_STATUSES } from '@swipeless/shared'
+import { type DateSuggestion, SETUP_STATUSES } from '@swipeless/shared'
 import { sql } from 'drizzle-orm'
 import {
   boolean,
@@ -17,11 +17,12 @@ export const setupStatusEnum = pgEnum('setup_status', SETUP_STATUSES)
 
 /**
  * A pair. `profileAId < profileBId` always, so a pair has exactly one row
- * regardless of who expressed interest first.
+ * regardless of whose agent picked first.
  *
- * One-way interest lives here too, in `interestedAAt` / `interestedBAt`: a row
- * with only one of them set is `interest_pending` and is visible only to that
- * side. PRODUCT.md: interest is "invisible to the other side until mutual".
+ * An agent's pick creates the row with a suggested date and stamps that side's
+ * `interestedAAt` / `interestedBAt`. A `suggested` row is visible only to the
+ * side that picked; one human's yes makes it `requested` and visible to both.
+ * PRODUCT.md: interest "stays hidden until both say yes".
  */
 export const setups = pgTable(
   'setups',
@@ -33,13 +34,13 @@ export const setups = pgTable(
     profileBId: uuid()
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
-    status: setupStatusEnum().notNull().default('interest_pending'),
-    /** When each side expressed interest. Null means they have not. */
+    status: setupStatusEnum().notNull().default('suggested'),
+    /** When each side's agent picked the other. Null means it has not. */
     interestedAAt: timestamp({ withTimezone: true }),
     interestedBAt: timestamp({ withTimezone: true }),
-    proposal: jsonb().$type<Proposal>(),
-    counter: jsonb().$type<Proposal>(),
-    confirmedSlot: timestamp({ withTimezone: true }),
+    /** The date swipeless suggested at the pick: a public place and a time. */
+    date: jsonb().$type<typeof DateSuggestion.Encoded>().notNull(),
+    /** Each human's yes. */
     confirmedA: boolean().notNull().default(false),
     confirmedB: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

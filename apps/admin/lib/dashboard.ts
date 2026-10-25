@@ -6,7 +6,12 @@ import {
   setups,
 } from '@swipeless/db/schema'
 import { isPhotoKey } from '@swipeless/photos'
-import { SETUP_STATUSES, type SetupStatus } from '@swipeless/shared'
+import {
+  REVIEW_STATUSES,
+  type ReviewStatus,
+  SETUP_STATUSES,
+  type SetupStatus,
+} from '@swipeless/shared'
 import { desc, inArray, sql } from 'drizzle-orm'
 import { Cause, Clock, Effect, Schema } from 'effect'
 import { isSuperAdmin } from './access.ts'
@@ -19,8 +24,10 @@ import { isSuperAdmin } from './access.ts'
  * components stay dumb and never import Effect.
  *
  * Profile overviews select the published brief and matching fields explicitly.
- * Private details are queried only for the super admin, identified by a verified
- * session email. Token hashes are never selected.
+ * The note (first name, photo) and the private details (phone, plus the
+ * optional email and standing instructions) are queried only for the super
+ * admin, identified by a verified session email. Token hashes are never
+ * selected.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -33,6 +40,8 @@ export interface ProfileCounts {
   readonly live: number
   readonly expiringSoon: number
   readonly expired: number
+  /** By review status, every row regardless of expiry. */
+  readonly review: Readonly<Record<ReviewStatus, number>>
 }
 
 export interface SetupCount {
@@ -58,15 +67,22 @@ export const ProfileOverview = Schema.Struct({
   radiusKm: Schema.Number,
   availability: Schema.String,
   brief: Schema.String,
+  reviewStatus: Schema.Literal(...REVIEW_STATUSES),
   createdAt: Schema.String,
   lastSeenAt: Schema.String,
   expired: Schema.Boolean,
-  privateDetails: Schema.optional(
+  /** What the note shows the one person a date is with. Super admin only. */
+  note: Schema.optional(
     Schema.Struct({
       firstName: Schema.String,
+      photoUrl: Schema.NullOr(Schema.String),
+    })
+  ),
+  /** The phone is the private layer; email and instructions are optional extras. */
+  privateDetails: Schema.optional(
+    Schema.Struct({
       phone: Schema.String,
       email: Schema.NullOr(Schema.String),
-      photoUrl: Schema.NullOr(Schema.String),
       standingInstructions: Schema.NullOr(Schema.String),
     })
   ),
@@ -109,10 +125,30 @@ const countProfiles = (at: number) =>
         expired: sql<number>`(count(*) filter (
           where ${profiles.lastSeenAt} <= ${dead}::timestamptz
         ))::int`,
+        pending: sql<number>`(count(*) filter (
+          where ${profiles.reviewStatus} = 'pending'
+        ))::int`,
+        approved: sql<number>`(count(*) filter (
+          where ${profiles.reviewStatus} = 'approved'
+        ))::int`,
+        rejected: sql<number>`(count(*) filter (
+          where ${profiles.reviewStatus} = 'rejected'
+        ))::int`,
       })
       .from(profiles)
 
-    return rows[0] ?? { total: 0, live: 0, expiringSoon: 0, expired: 0 }
+    const row = rows[0]
+    return {
+      total: row?.total ?? 0,
+      live: row?.live ?? 0,
+      expiringSoon: row?.expiringSoon ?? 0,
+      expired: row?.expired ?? 0,
+      review: {
+        pending: row?.pending ?? 0,
+        approved: row?.approved ?? 0,
+        rejected: row?.rejected ?? 0,
+      },
+    } satisfies ProfileCounts
   })
 
 /**
@@ -192,6 +228,7 @@ export const profileOverviews = (
         radiusKm: profiles.radiusKm,
         availability: profiles.availability,
         brief: profiles.brief,
+        reviewStatus: profiles.reviewStatus,
         createdAt: profiles.createdAt,
         lastSeenAt: profiles.lastSeenAt,
       })
@@ -220,15 +257,16 @@ export const profileOverviews = (
               )
             )
         : []
-    const privateById = new Map(
-      privateRows.map(({ id, ...details }) => [
+    const superById = new Map(
+      privateRows.map(({ id, firstName, photoUrl, ...details }) => [
         id,
         {
-          ...details,
-          photoUrl:
-            details.photoUrl && isPhotoKey(details.photoUrl)
-              ? `/api/photos/${id}`
-              : details.photoUrl,
+          note: {
+            firstName,
+            photoUrl:
+              photoUrl && isPhotoKey(photoUrl) ? `/api/photos/${id}` : photoUrl,
+          },
+          privateDetails: details,
         },
       ])
     )
@@ -236,9 +274,7 @@ export const profileOverviews = (
       overviews: visibleRows.map(
         (row): ProfileOverview => ({
           ...row,
-          ...(privateById.has(row.id)
-            ? { privateDetails: privateById.get(row.id) }
-            : {}),
+          ...superById.get(row.id),
           createdAt: row.createdAt.toISOString(),
           lastSeenAt: row.lastSeenAt.toISOString(),
           expired: row.lastSeenAt.getTime() <= at - PROFILE_TTL_DAYS * DAY_MS,

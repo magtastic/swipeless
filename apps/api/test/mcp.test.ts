@@ -26,7 +26,6 @@ const TOOLS = [
   'swipeless_publish',
   'swipeless_candidates',
   'swipeless_interest',
-  'swipeless_propose',
   'swipeless_confirm',
   'swipeless_decline',
   'swipeless_setups',
@@ -45,11 +44,13 @@ const VALID_PROFILE = {
     'She is a hydrologist who reads the weather like other people read faces. ' +
     'She values directness and dislikes being managed. Dealbreaker: anyone ' +
     'who calls hiking a hobby and means a car park.',
-  privateLayer: { firstName: 'Sigrún', phone: '+3548221234' },
+  firstName: 'Sigrún',
+  photoUrl: 'https://example.invalid/sigrun.jpg',
+  privateLayer: { phone: '+3548221234' },
 }
 
 describe('MCP /mcp', () => {
-  test('lists the eight swipeless tools', async () => {
+  test('lists the seven swipeless tools', async () => {
     const handler = openHandler(fakeApp())
     const session = await initialize(handler)
 
@@ -65,6 +66,27 @@ describe('MCP /mcp', () => {
     expect(json.result.tools.map((t) => t.name).sort()).toEqual(
       [...TOOLS].sort()
     )
+  })
+
+  test('no tool description says AI dating', async () => {
+    const handler = openHandler(fakeApp())
+    const session = await initialize(handler)
+
+    const res = await rpc(
+      handler,
+      { method: 'tools/list', params: {} },
+      { session }
+    )
+    const json = (await readRpc(res)) as {
+      result: { tools: { name: string; description: string }[] }
+    }
+    for (const tool of json.result.tools) {
+      expect(tool.description.toLowerCase()).not.toContain('ai dating')
+    }
+    const publish = json.result.tools.find(
+      (tool) => tool.name === 'swipeless_publish'
+    )
+    expect(publish?.description).toContain('find them a date')
   })
 
   test('a declared failure comes back as a tool error, not a protocol error', async () => {

@@ -10,6 +10,12 @@ import {
   type ProfileOverview,
   type SetupCount,
 } from '../lib/dashboard.ts'
+import {
+  loadReviewQueue,
+  type PendingProfile,
+  type ReviewQueue,
+} from '../lib/review.ts'
+import { approveProfile, rejectProfile } from './review-actions.ts'
 
 /** Every read is per-request, and `next build` runs without a database. */
 export const dynamic = 'force-dynamic'
@@ -37,50 +43,177 @@ function Profiles({ counts }: { counts: Dashboard['profiles'] }) {
         <Stat label="expired" value={counts.expired} />
         <Stat label="total rows" value={counts.total} />
       </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Stat label="waiting for review" value={counts.review.pending} />
+        <Stat label="approved" value={counts.review.approved} />
+        <Stat label="rejected" value={counts.review.rejected} />
+      </div>
+    </section>
+  )
+}
+
+/** Stored photos come through `/api/photos/`; anything else must be https. */
+const displayable = (source: string | null) =>
+  source &&
+  (source.startsWith('/api/photos/') ||
+    /^https:\/\//i.test(source) ||
+    /^data:image\/(jpeg|png|webp|gif);base64,/i.test(source))
+    ? source
+    : null
+
+function Photo({
+  source,
+  firstName,
+  size,
+}: {
+  source: string | null
+  firstName: string
+  size: number
+}) {
+  const imageSource = displayable(source)
+  return imageSource ? (
+    <Image
+      src={imageSource}
+      alt={`Photo of ${firstName}`}
+      width={size}
+      height={size}
+      unoptimized
+      referrerPolicy="no-referrer"
+      className="h-auto max-h-80 w-auto max-w-full rounded-lg object-contain"
+    />
+  ) : (
+    <p className="text-sm text-soft">
+      {source ? 'Photo format cannot be displayed.' : 'No photo uploaded.'}
+    </p>
+  )
+}
+
+function PendingCard({
+  profile,
+  canDecide,
+}: {
+  profile: PendingProfile
+  canDecide: boolean
+}) {
+  const waiting = new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(profile.createdAt))
+  return (
+    <li className="flex flex-col gap-4 rounded-xl border border-rule-strong bg-sheet p-5 sm:flex-row">
+      {profile.note && (
+        <div className="shrink-0 sm:w-48">
+          <Photo
+            source={profile.note.photoUrl}
+            firstName={profile.note.firstName}
+            size={192}
+          />
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">
+            {profile.note ? (
+              <span className="font-hand text-3xl font-normal">
+                {profile.note.firstName},{' '}
+              </span>
+            ) : null}
+            {profile.age} · {profile.gender.replaceAll('_', ' ')} ·{' '}
+            {profile.city}, {profile.country}
+          </h3>
+          <p className="mt-1 text-sm text-soft">
+            Published {waiting} (UTC) ·{' '}
+            <code className="break-all text-xs">{profile.id}</code>
+          </p>
+        </div>
+        <p className="whitespace-pre-wrap break-words text-sm leading-7">
+          {profile.brief}
+        </p>
+        {canDecide && (
+          <div className="flex gap-3">
+            <form action={approveProfile}>
+              <input type="hidden" name="profileId" value={profile.id} />
+              <button
+                type="submit"
+                className="rounded-md bg-hi px-4 py-2 text-sm font-semibold text-hi-ink hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              >
+                Approve
+              </button>
+            </form>
+            <form action={rejectProfile}>
+              <input type="hidden" name="profileId" value={profile.id} />
+              <button
+                type="submit"
+                className="rounded-md border border-red px-4 py-2 text-sm font-semibold text-red hover:bg-red/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              >
+                Reject
+              </button>
+            </form>
+          </div>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function Review({ queue }: { queue: ReviewQueue }) {
+  return (
+    <section className="flex flex-col gap-4" aria-labelledby="review-queue">
+      <div>
+        <h2 id="review-queue" className="text-lg font-semibold">
+          Review queue
+        </h2>
+        <p className="mt-1 text-sm text-soft">
+          Oldest first. Nobody is matched until approved: check the photo is a
+          real person over 18 and the brief is about them.
+          {!queue.canDecide && ' Only the super admin can approve or reject.'}
+        </p>
+      </div>
+      {queue.pending.length === 0 ? (
+        <p className="font-hand text-2xl text-ink">
+          All caught up. Nobody waiting.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-4">
+          {queue.pending.map((profile) => (
+            <PendingCard
+              key={profile.id}
+              profile={profile}
+              canDecide={queue.canDecide}
+            />
+          ))}
+        </ol>
+      )}
+      {queue.hasMore && (
+        <p className="text-sm text-soft">
+          More are waiting. Decide these and the next ones appear.
+        </p>
+      )}
     </section>
   )
 }
 
 function PrivateDetails({
+  note,
   details,
 }: {
+  note: NonNullable<ProfileOverview['note']>
   details: NonNullable<ProfileOverview['privateDetails']>
 }) {
-  const source = details.photoUrl
-  const imageSource =
-    source &&
-    (source.startsWith('/api/photos/') ||
-      /^https:\/\//i.test(source) ||
-      /^data:image\/(jpeg|png|webp|gif);base64,/i.test(source))
-      ? source
-      : null
   return (
     <section className="space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30">
       <h3 className="font-medium">
-        Private details{' '}
+        Note and private details{' '}
         <span className="ml-2 text-xs font-normal text-amber-800 dark:text-amber-200">
           Super admin only
         </span>
       </h3>
-      {imageSource ? (
-        <Image
-          src={imageSource}
-          alt={`Profile photo of ${details.firstName}`}
-          width={320}
-          height={320}
-          unoptimized
-          referrerPolicy="no-referrer"
-          className="h-auto max-h-80 w-auto max-w-full rounded-lg object-contain"
-        />
-      ) : (
-        <p className="text-sm text-neutral-500">
-          {source ? 'Photo format cannot be displayed.' : 'No photo uploaded.'}
-        </p>
-      )}
+      <Photo source={note.photoUrl} firstName={note.firstName} size={320} />
       <dl className="grid gap-4 text-sm sm:grid-cols-2">
         <div>
           <dt className="text-neutral-500">First name</dt>
-          <dd className="mt-1">{details.firstName}</dd>
+          <dd className="mt-1">{note.firstName}</dd>
         </div>
         <div>
           <dt className="text-neutral-500">Phone</dt>
@@ -151,6 +284,9 @@ function ProfileOverviews({
               >
                 {profile.expired ? 'Expired' : 'Live'}
               </span>
+              <span className="ml-2 rounded-full border border-rule-strong px-2 py-1 text-xs text-soft">
+                {profile.reviewStatus}
+              </span>
               <span className="mt-2 block text-sm text-neutral-500">
                 Interested in {profile.interestedIn.map(label).join(', ')} ·
                 Published {date(profile.createdAt)}
@@ -177,8 +313,11 @@ function ProfileOverviews({
                   </dd>
                 </div>
               </dl>
-              {profile.privateDetails && (
-                <PrivateDetails details={profile.privateDetails} />
+              {profile.note && profile.privateDetails && (
+                <PrivateDetails
+                  note={profile.note}
+                  details={profile.privateDetails}
+                />
               )}
               <div>
                 <h3 className="mb-2 font-medium">Brief</h3>
@@ -301,7 +440,10 @@ export default async function Page({
     requestedPage <= 100000
       ? requestedPage
       : 1
-  const result = await loadDashboard(page, session.user.email)
+  const [result, review] = await Promise.all([
+    loadDashboard(page, session.user.email),
+    loadReviewQueue(session.user.email),
+  ])
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-4xl flex-col gap-10 px-6 py-12">
@@ -341,6 +483,13 @@ export default async function Page({
         </div>
       ) : (
         <>
+          {review._tag === 'Loaded' ? (
+            <Review queue={review.queue} />
+          ) : (
+            <p className="text-sm text-red">
+              The review queue could not load: {review.reason}
+            </p>
+          )}
           <Profiles counts={result.dashboard.profiles} />
           <ProfileOverviews
             profiles={result.dashboard.overviews}

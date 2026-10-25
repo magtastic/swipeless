@@ -248,7 +248,7 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
   `@effect/platform` HttpApi for REST, `@effect/ai` for the MCP server, `@effect/sql` over
   Postgres. Deployed as Vercel functions. Next.js admin behind Google OAuth restricted to
   `@smitten.fun` and `@smitten.co`. Postgres with pgvector, migrations via drizzle-kit.
-- Secrets via 1Password, materialized with `bun run get:env`.
+- Secrets via 1Password, materialized with `bun run get:env:dev` or `bun run get:env:prod`.
 
 ### Voice
 

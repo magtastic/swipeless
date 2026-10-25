@@ -20,11 +20,15 @@ export const Gender = Schema.Literal(...GENDERS).annotations({
 })
 export type Gender = typeof Gender.Type
 
+/**
+ * PRODUCT.md, The setup and the date: an agent's pick creates a setup with a
+ * date swipeless suggests. `suggested` waits on the picking human's yes and is
+ * visible only to the side that picked. `requested` means one human said yes
+ * and the date request is with the other. `confirmed` means both said yes.
+ */
 export const SETUP_STATUSES = [
-  'interest_pending',
-  'mutual',
-  'proposed',
-  'countered',
+  'suggested',
+  'requested',
   'confirmed',
   'declined',
   'expired',
@@ -99,27 +103,46 @@ export class ProfileCore extends Schema.Class<ProfileCore>('ProfileCore')({
   }),
 }) {}
 
-/** What another agent gets to see: no radius, no private layer. */
+export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
+
+/**
+ * PRODUCT.md, Identity: "A person checks every profile before it goes live,
+ * including that they are 18+." Only `approved` profiles are matched.
+ */
+export const ReviewStatus = Schema.Literal(...REVIEW_STATUSES).annotations({
+  identifier: 'ReviewStatus',
+})
+export type ReviewStatus = typeof ReviewStatus.Type
+
+/** What another agent gets to see: no radius, no name, photo or phone. */
 export class CandidateCore extends Schema.Class<CandidateCore>('CandidateCore')(
   coreFields
 ) {}
 
-/** Withheld until both humans confirm a date. */
+export const FirstName = Schema.String.pipe(
+  Schema.minLength(1),
+  Schema.maxLength(80)
+).annotations({ identifier: 'FirstName' })
+
+/** An HTTPS URL, or an inline image a publish uploads to private storage. */
+export const PhotoUrl = Schema.String.pipe(
+  Schema.maxLength(1400000),
+  Schema.pattern(
+    /^(https:\/\/[^\s]+|data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2})$/
+  )
+).annotations({ identifier: 'PhotoUrl' })
+
+/** Withheld until both humans say yes to a date. */
 export class PrivateLayer extends Schema.Class<PrivateLayer>('PrivateLayer')({
-  firstName: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(80)),
   phone: PhoneNumber,
-  photoUrl: Schema.optional(
-    Schema.String.pipe(
-      Schema.maxLength(1400000),
-      Schema.pattern(
-        /^(https:\/\/[^\s]+|data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2})$/
-      )
-    )
-  ),
 }) {}
 
 export class Profile extends ProfileCore.extend<Profile>('Profile')({
   brief: Brief,
+  /** Shown in the note, to the one person a date is with. */
+  firstName: FirstName,
+  /** Required to publish. Shown in the note, never to candidates. */
+  photoUrl: PhotoUrl,
   privateLayer: PrivateLayer,
   email: Schema.optional(Schema.String),
   /** Agent-steering, e.g. "no weekdays", "never propose bars". */
@@ -144,33 +167,43 @@ export class Venue extends Schema.Class<Venue>('Venue')({
   address: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(400)),
 }) {}
 
-export class Proposal extends Schema.Class<Proposal>('Proposal')({
+/** The first date swipeless suggests for both people: a public place and a time. */
+export class DateSuggestion extends Schema.Class<DateSuggestion>(
+  'DateSuggestion'
+)({
   venue: Venue,
-  /** 1-3 candidate start times. */
-  slots: Schema.Array(Timestamp).pipe(Schema.minItems(1), Schema.maxItems(3)),
-  note: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
+  time: Timestamp,
 }) {}
 
-/** The caller's role in a setup: a proposes first, b may counter once. */
-export const SetupRole = Schema.Literal('a', 'b').annotations({
-  identifier: 'SetupRole',
-})
-export type SetupRole = typeof SetupRole.Type
+/**
+ * What the note shows about the other person. Released to a side as soon as
+ * it can see the setup. The photo URL is signed and short-lived.
+ */
+export class Counterpart extends Schema.Class<Counterpart>('Counterpart')({
+  profileId: ProfileId,
+  firstName: FirstName,
+  age: Schema.Int,
+  photoUrl: Schema.String,
+  /**
+   * The counterpart's stored brief, the same text candidates get, so the
+   * picked person's agent can write the note. A brief tailored to the person
+   * looking replaces it later (PRODUCT.md, Matching).
+   */
+  brief: Brief,
+}) {}
 
 export class Setup extends Schema.Class<Setup>('Setup')({
   setupId: SetupId,
-  counterpartProfileId: ProfileId,
-  role: SetupRole,
+  counterpart: Counterpart,
   status: SetupStatus,
-  proposal: Schema.NullOr(Proposal),
-  counter: Schema.NullOr(Proposal),
-  confirmedSlot: Schema.NullOr(Timestamp),
-  /** Whether the caller has confirmed. The counterpart's flag is not exposed. */
+  date: DateSuggestion,
+  /** Whether the caller's agent made the pick that started this setup. */
+  youPicked: Schema.Boolean,
+  /** Whether the caller's human said yes. The other side's flag is not exposed. */
   youConfirmed: Schema.Boolean,
   /**
-   * The counterpart's private layer, present only once the setup is
-   * confirmed. Listing setups is how an agent recovers it after the
-   * confirm call, so it does not have to store it.
+   * The counterpart's private layer, present only once both said yes.
+   * Listing setups is how an agent recovers it after the confirm call.
    */
   counterpartPrivateLayer: Schema.optional(PrivateLayer),
   createdAt: Timestamp,
@@ -200,18 +233,11 @@ export class InterestRequest extends Schema.Class<InterestRequest>(
   profileId: ProfileId,
 }) {}
 
-export class ProposeRequest extends Schema.Class<ProposeRequest>(
-  'ProposeRequest'
-)({
-  setupId: SetupId,
-  proposal: Proposal,
-}) {}
-
+/** The caller's human said yes to the suggested date. */
 export class ConfirmRequest extends Schema.Class<ConfirmRequest>(
   'ConfirmRequest'
 )({
   setupId: SetupId,
-  slot: Timestamp,
 }) {}
 
 /**
@@ -251,24 +277,18 @@ export class CandidatesResponse extends Schema.Class<CandidatesResponse>(
   candidates: Schema.Array(Candidate),
 }) {}
 
+/** A pick answers with the whole setup, so the agent can show the note at once. */
 export class InterestResponse extends Schema.Class<InterestResponse>(
   'InterestResponse'
 )({
-  setupId: SetupId,
-  status: SetupStatus,
-}) {}
-
-export class ProposeResponse extends Schema.Class<ProposeResponse>(
-  'ProposeResponse'
-)({
-  status: SetupStatus,
+  setup: Setup,
 }) {}
 
 export class ConfirmResponse extends Schema.Class<ConfirmResponse>(
   'ConfirmResponse'
 )({
   status: SetupStatus,
-  /** Released only once both humans have confirmed the same slot. */
+  /** Released only once both humans have said yes. */
   privateLayer: Schema.optional(PrivateLayer),
 }) {}
 
@@ -310,7 +330,7 @@ export class NotFound extends Schema.TaggedError<NotFound>()(
   HttpApiSchema.annotations<NotFound>({ status: 404 })
 ) {}
 
-/** The action is not valid for the setup's current status, e.g. a second counter. */
+/** The action is not valid for the setup's current status, e.g. a yes after a no. */
 export class Conflict extends Schema.TaggedError<Conflict>()(
   'Conflict',
   { status: SetupStatus },
@@ -367,11 +387,8 @@ export const InterestError = Schema.Union(
 )
 export type InterestError = typeof InterestError.Type
 
-export const ProposeError = Schema.Union(Unauthorized, Gone, NotFound, Conflict)
-export type ProposeError = typeof ProposeError.Type
+export const ConfirmError = Schema.Union(Unauthorized, Gone, NotFound, Conflict)
+export type ConfirmError = typeof ConfirmError.Type
 
-export const ConfirmError = ProposeError
-export type ConfirmError = ProposeError
-
-export const DeclineError = ProposeError
-export type DeclineError = ProposeError
+export const DeclineError = ConfirmError
+export type DeclineError = ConfirmError
