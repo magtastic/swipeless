@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@swipeless/shared": "workspace:*",
     "@vercel/blob": "^2.3.0",
     "effect": "catalog:"
   },

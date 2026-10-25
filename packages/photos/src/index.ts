@@ -1,4 +1,5 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
+import { inlinePhotoProblem } from '@swipeless/shared'
 import { del, get, put } from '@vercel/blob'
 import { Clock, Config, Context, Effect, Layer, Redacted } from 'effect'
 
@@ -11,25 +12,16 @@ export function decodePhoto(value: string) {
     /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value)
   if (!match?.[1] || !match[2])
     throw new Error('Photo must be a JPEG, PNG, or WebP image')
-  const bytes = Buffer.from(match[2], 'base64')
-  if (
-    bytes.length > 1024 * 1024 ||
-    bytes.length < 12 ||
-    bytes.toString('base64') !== match[2]
-  )
-    throw new Error('Invalid photo or photo exceeds 1 MiB')
+  // The contract refuses these first; this is the same rule, kept at the
+  // storage boundary so nothing else can upload a file the contract would not.
+  const problem = inlinePhotoProblem(value)
+  if (problem !== undefined) throw new Error(problem)
   const type = match[1]
-  const valid =
-    type === 'jpeg'
-      ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-      : type === 'png'
-        ? bytes
-            .subarray(0, 8)
-            .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-        : bytes.toString('ascii', 0, 4) === 'RIFF' &&
-          bytes.toString('ascii', 8, 12) === 'WEBP'
-  if (!valid) throw new Error('Photo contents do not match its image type')
-  return { bytes, contentType: `image/${type}`, extension: type }
+  return {
+    bytes: Buffer.from(match[2], 'base64'),
+    contentType: `image/${type}`,
+    extension: type,
+  }
 }
 
 export class PhotoStorage extends Context.Tag('PhotoStorage')<
