@@ -126,7 +126,7 @@ the button next to a confirmed date. Set on the API and admin Vercel projects:
 | Variable | Meaning |
 |---|---|
 | `RESEND_API_KEY` | Resend API key. Without it every email is only logged |
-| `EMAIL_FROM` | Sender, on a domain verified in Resend. Defaults to `onboarding@resend.dev`, which only delivers to the Resend account's own address |
+| `EMAIL_FROM` | Sender, on a domain verified in Resend. Production sends as `swipeless <hello@swipeless.me>`. Defaults to `onboarding@resend.dev`, which only delivers to the Resend account's own address |
 | `EMAIL_REPLY_TO` | Optional. Where replies to "how was the date?" land |
 | `ANTHROPIC_API_KEY` | API only. Claude writes the date request's "why you might click" line. Without it the line is left out |
 | `API_BASE_URL` | API only. Origin the yes-or-no links point at. Defaults to `https://api.swipeless.me`; local `.env` sets `http://localhost:3001` |
