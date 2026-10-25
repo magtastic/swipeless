@@ -201,9 +201,10 @@ bend it, noted below.
   refused in production.
 - The date request shows the other person's photo and a line on why the two might click, and
   leaves the street address out of the note (the plain-text twin keeps it). The line is written
-  per email by `gpt-5-mini` from both approved briefs, behind a `FitWriter` seam; without it the
-  email goes out anyway. This is the first server-side language model, which the 2026-10-23
-  entry anticipated for tailored briefs.
+  per email by Claude (`claude-opus-5-5`, low effort) from both approved briefs, behind a
+  `FitWriter` seam; without `ANTHROPIC_API_KEY` or on any failure the email goes out without it.
+  This is the first server-side language model, which the 2026-10-23 entry anticipated for
+  tailored briefs. Embeddings stay on OpenAI: Anthropic has no embeddings API.
 - The photo in the email loads from `/answer/photo`, signed like the answer link and served only
   while the setup is open to that person. Stored photos' own links expire in ten minutes, too
   soon for an email.

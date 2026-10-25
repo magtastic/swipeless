@@ -4,7 +4,7 @@ import { PhotoLinksLive } from '@swipeless/photos'
 import type { ProfileId, SetupStatus } from '@swipeless/shared'
 import { Cause, Effect, Layer } from 'effect'
 import { DateSuggesterRules } from './date-suggester.ts'
-import { FitWriterOpenAi } from './fit-writer.ts'
+import { FitWriterClaude } from './fit-writer.ts'
 import { NotifierEmail } from './notifier.ts'
 import { SetupLifecycle } from './setups.ts'
 
@@ -36,7 +36,7 @@ const ActAsLive = SetupLifecycle.Default.pipe(
   Layer.provide(PhotoLinksLive),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierEmail),
-  Layer.provide(FitWriterOpenAi),
+  Layer.provide(FitWriterClaude),
   Layer.provide(MailerLive),
   Layer.provide(DbLive)
 )

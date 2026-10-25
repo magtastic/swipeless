@@ -5,7 +5,7 @@ import { Layer } from 'effect'
 import { Caller } from './caller.ts'
 import { DateSuggesterRules } from './date-suggester.ts'
 import { EmbeddingModelOpenAi } from './embeddings.ts'
-import { FitWriterOpenAi } from './fit-writer.ts'
+import { FitWriterClaude } from './fit-writer.ts'
 import { NotifierEmail } from './notifier.ts'
 import { Swipeless } from './service.ts'
 
@@ -26,7 +26,7 @@ export const AppLive = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
   Layer.provide(EmbeddingModelOpenAi),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierEmail),
-  Layer.provide(FitWriterOpenAi),
+  Layer.provide(FitWriterClaude),
   Layer.provide(MailerLive),
   Layer.provide(DbLive)
 )
