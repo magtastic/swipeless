@@ -37,6 +37,8 @@ export const MailerLog = Layer.succeed(
 
 const RESEND_URL = 'https://api.resend.com/emails'
 
+const SEND_TIMEOUT = '10 seconds'
+
 /**
  * Sends through Resend's REST API. `EMAIL_FROM` must be on a domain verified
  * in Resend; the default only delivers to the Resend account's own address,
@@ -50,9 +52,10 @@ const resend = (apiKey: Redacted.Redacted) =>
     const replyTo = yield* Config.option(Config.string('EMAIL_REPLY_TO'))
     return Mailer.of({
       send: (email) =>
-        Effect.tryPromise(async () => {
+        Effect.tryPromise(async (signal) => {
           const response = await fetch(RESEND_URL, {
             method: 'POST',
+            signal,
             headers: {
               authorization: `Bearer ${Redacted.value(apiKey)}`,
               'content-type': 'application/json',
@@ -72,6 +75,9 @@ const resend = (apiKey: Redacted.Redacted) =>
             throw new Error(`Resend answered ${response.status}`)
           }
         }).pipe(
+          // A stalled connection must not hold a yes open; the timeout
+          // interrupts the fetch, which aborts it through the signal.
+          Effect.timeout(SEND_TIMEOUT),
           Effect.catchAllCause((cause) =>
             Effect.logWarning('email: send failed', cause).pipe(
               Effect.annotateLogs({ subject: email.subject })

@@ -249,7 +249,9 @@ function DateRow({
           Asked {dateTime(date.followUpSentAt)}
         </p>
       ) : canSend ? (
-        anyEmail ? (
+        !past ? (
+          <p className="shrink-0 text-sm text-soft">Ask after the date</p>
+        ) : anyEmail ? (
           <form action={followUpDate} className="shrink-0">
             <input type="hidden" name="setupId" value={date.id} />
             <button

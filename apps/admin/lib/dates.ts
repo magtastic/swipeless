@@ -47,7 +47,7 @@ export type FollowUpOutcome =
   | { readonly _tag: 'Sent'; readonly emailed: number }
   /** Not the super admin. Nothing was read or written. */
   | { readonly _tag: 'Forbidden' }
-  /** Gone, not confirmed, or already followed up. Nothing was written. */
+  /** Gone, not confirmed, not yet happened, or already followed up. Nothing was written. */
   | { readonly _tag: 'NotSendable' }
   /** Neither person gave an email. Nothing was written. */
   | { readonly _tag: 'NoEmail' }
@@ -115,8 +115,9 @@ export const confirmedDates = (verifiedEmail: string | null | undefined) =>
 /**
  * Email both people "how was the date?", for the super admin only.
  *
- * The stamp is a guarded update, so only a confirmed setup that has not been
- * followed up is touched and two tabs send one round. The stamp lands before
+ * The stamp is a guarded update, so only a confirmed setup whose date has
+ * passed and that has not been followed up is touched, and two tabs send one
+ * round. The stamp lands before
  * the emails go out: a lost email is better than a second one.
  */
 export const followUp = (
@@ -158,7 +159,10 @@ export const followUp = (
         and(
           eq(setups.id, setupId),
           eq(setups.status, 'confirmed'),
-          isNull(setups.followUpSentAt)
+          isNull(setups.followUpSentAt),
+          // Only after the date: a stamp is final, so an early press would
+          // use up the one follow-up before the date happened.
+          sql`(${setups.date}->>'time')::timestamptz <= ${at.toISOString()}::timestamptz`
         )
       )
       .returning({ id: setups.id })
