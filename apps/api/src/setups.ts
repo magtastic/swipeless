@@ -6,7 +6,7 @@ import {
   setupRunningSql,
 } from '@swipeless/db/rules'
 import { profiles, type SetupRow, setups } from '@swipeless/db/schema'
-import { PhotoLinks } from '@swipeless/photos'
+import { ProfilePhotos } from '@swipeless/photos'
 import {
   ConfirmResponse,
   Conflict,
@@ -170,7 +170,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
     dependencies: [],
     effect: Effect.gen(function* () {
       const db = yield* PgDrizzle.PgDrizzle
-      const photoLinks = yield* PhotoLinks
+      const photos = yield* ProfilePhotos
       const suggester = yield* DateSuggester
       const notifier = yield* Notifier
 
@@ -325,7 +325,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             photoUrl:
               person.photoUrl === null
                 ? ''
-                : yield* photoLinks.url(person.photoUrl, person.id),
+                : yield* photos.release(person.photoUrl, person.id),
           })
         })
 

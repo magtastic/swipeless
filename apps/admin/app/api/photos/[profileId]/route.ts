@@ -1,13 +1,8 @@
 import { DbLive, PgDrizzle } from '@swipeless/db'
 import { profiles } from '@swipeless/db/schema'
-import {
-  isPhotoKey,
-  PhotoStorage,
-  PhotoStorageLive,
-  validPhotoSignature,
-} from '@swipeless/photos'
+import { ProfilePhotos, ProfilePhotosLive } from '@swipeless/photos'
 import { eq } from 'drizzle-orm'
-import { Config, Effect, Redacted } from 'effect'
+import { Effect } from 'effect'
 import { auth } from '../../../../auth.ts'
 import { isSuperAdmin } from '../../../../lib/access.ts'
 
@@ -29,37 +24,26 @@ export async function GET(
   )
     return new Response(null, { status: 404, headers })
   const session = await auth()
-  const url = new URL(request.url)
+  const link = new URL(request.url).searchParams
   const result = await Effect.runPromise(
     Effect.gen(function* () {
-      if (!isSuperAdmin(session?.user?.email)) {
-        const secret = Redacted.value(
-          yield* Config.redacted('BLOB_READ_WRITE_TOKEN')
-        )
-        if (
-          !validPhotoSignature(
-            profileId,
-            Number(url.searchParams.get('expires')),
-            url.searchParams.get('signature') ?? '',
-            secret,
-            Math.floor(Date.now() / 1000)
-          )
-        )
-          return null
-      }
+      const photos = yield* ProfilePhotos
+      if (
+        !isSuperAdmin(session?.user?.email) &&
+        !(yield* photos.verifyLink(profileId, link))
+      )
+        return null
       const db = yield* PgDrizzle.PgDrizzle
-      const storage = yield* PhotoStorage
       const rows = yield* db
         .select({ photoUrl: profiles.photoUrl })
         .from(profiles)
         .where(eq(profiles.id, profileId))
         .limit(1)
-      const key = rows[0]?.photoUrl
-      if (!key || !isPhotoKey(key)) return null
-      return yield* storage.read(key)
+      const reference = rows[0]?.photoUrl
+      return reference ? yield* photos.read(reference) : null
     }).pipe(
       Effect.provide(DbLive),
-      Effect.provide(PhotoStorageLive),
+      Effect.provide(ProfilePhotosLive),
       Effect.catchAllCause(() => Effect.succeed(null))
     )
   )

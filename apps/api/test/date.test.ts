@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { adminEvents, profiles } from '@swipeless/db/schema'
-import { validPhotoSignature } from '@swipeless/photos'
 import { Duration } from 'effect'
 import {
   CELLO_BRIEF,
@@ -11,7 +10,7 @@ import {
   profile,
   publish,
 } from './support/agent.ts'
-import { hasTestDb, openApp, PHOTO_SECRET, warnSkipped } from './support/app.ts'
+import { hasTestDb, openApp, warnSkipped } from './support/app.ts'
 
 /**
  * The product, start to finish: two agents publish, a person approves them,
@@ -111,14 +110,12 @@ describe.skipIf(!hasTestDb)('a pick becomes a date', () => {
     expect(link.origin + link.pathname).toBe(
       `https://photos.example/api/photos/${jon.profileId}`
     )
-    const expires = Number(link.searchParams.get('expires'))
-    const signature = link.searchParams.get('signature') ?? ''
-    const now = Math.floor(app.now() / 1000)
+    const now = app.now()
     const valid = (profileId: string, at: number) =>
-      validPhotoSignature(profileId, expires, signature, PHOTO_SECRET, at)
+      app.photoLinkValid(profileId, link.searchParams, at)
     expect(valid(jon.profileId, now)).toBe(true)
     expect(valid(sigrun.profileId, now)).toBe(false)
-    expect(valid(jon.profileId, now + 600)).toBe(false)
+    expect(valid(jon.profileId, now + 600_000)).toBe(false)
 
     // Until Sigrún says yes, Jón cannot know he was picked.
     expect(ok(await jon.setups()).setups).toEqual([])

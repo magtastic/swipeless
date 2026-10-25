@@ -1,5 +1,5 @@
 import { DbLive } from '@swipeless/db'
-import { PhotoLinksLive, PhotoStorageLive } from '@swipeless/photos'
+import { ProfilePhotosLive } from '@swipeless/photos'
 import { Layer } from 'effect'
 import { Caller } from './caller.ts'
 import { DateSuggesterRules } from './date-suggester.ts'
@@ -19,8 +19,7 @@ import { Swipeless } from './service.ts'
  */
 export const AppLive = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
   Layer.provide(DbLive),
-  Layer.provide(PhotoLinksLive),
-  Layer.provide(PhotoStorageLive),
+  Layer.provide(ProfilePhotosLive),
   Layer.provide(EmbeddingModelOpenAi),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierLog)

@@ -2,7 +2,7 @@ import { EmbeddingModel } from '@effect/ai'
 import { PgDrizzle } from '@swipeless/db'
 import { effectiveStatus, isLiveSql } from '@swipeless/db/rules'
 import { adminEvents, profiles, setups } from '@swipeless/db/schema'
-import { PhotoStorage } from '@swipeless/photos'
+import { ProfilePhotos } from '@swipeless/photos'
 import {
   Candidate,
   CandidateCore,
@@ -59,7 +59,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
     const db = yield* PgDrizzle.PgDrizzle
     const embeddings = yield* EmbeddingModel.EmbeddingModel
     const lifecycle = yield* SetupLifecycle
-    const photos = yield* PhotoStorage
+    const photos = yield* ProfilePhotos
 
     return {
       /**
@@ -72,9 +72,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           const token = yield* generateToken()
           const embedding = yield* embeddings.embed(profile.brief)
 
-          const photoReference = profile.photoUrl.startsWith('data:')
-            ? yield* photos.upload(profile.photoUrl)
-            : profile.photoUrl
+          const photoReference = yield* photos.store(profile.photoUrl)
           const inserted = yield* db
             .insert(profiles)
             .values({
@@ -100,7 +98,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               lastSeenAt: at,
             })
             .returning({ id: profiles.id })
-            .pipe(Effect.onError(() => photos.remove(photoReference)))
+            .pipe(Effect.onError(() => photos.discard(photoReference)))
 
           const row = inserted[0]
           if (row === undefined) {
@@ -267,7 +265,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .from(profiles)
             .where(eq(profiles.id, current.profileId))
           const photo = rows[0]?.photoUrl
-          if (photo) yield* photos.remove(photo)
+          if (photo) yield* photos.discard(photo)
           yield* db.delete(profiles).where(eq(profiles.id, current.profileId))
 
           yield* db.insert(adminEvents).values({

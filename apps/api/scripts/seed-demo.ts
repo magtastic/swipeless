@@ -1,6 +1,10 @@
 import { DbLive, PgDrizzle } from '@swipeless/db'
 import { adminEvents, profiles } from '@swipeless/db/schema'
-import { PhotoLinks, PhotoStorage, photoLinks } from '@swipeless/photos'
+import {
+  makeProfilePhotos,
+  memoryBlobStore,
+  ProfilePhotos,
+} from '@swipeless/photos'
 import { type Gender, PrivateLayer, Profile } from '@swipeless/shared'
 import { inArray, like } from 'drizzle-orm'
 import { Effect, Layer } from 'effect'
@@ -144,19 +148,16 @@ guardDatabaseTarget(process.argv)
 const fakeEmbeddings = process.argv.includes('--fake-embeddings')
 
 /**
- * Seeded photos are external https URLs, which publish stores as they are;
+ * Seeded photos are external https URLs, which publish keeps as they are;
  * nothing here uploads, so object storage and link signing are inert.
  */
-const NoObjectStorage = Layer.mergeAll(
-  Layer.succeed(
-    PhotoStorage,
-    PhotoStorage.of({
-      upload: () => Effect.dieMessage('seed photos are https URLs'),
-      remove: () => Effect.void,
-      read: () => Effect.succeed(null),
-    })
-  ),
-  Layer.succeed(PhotoLinks, photoLinks('seed-unused', 'https://invalid'))
+const NoObjectStorage = Layer.succeed(
+  ProfilePhotos,
+  makeProfilePhotos({
+    blobs: memoryBlobStore(),
+    secret: 'seed-unused',
+    baseUrl: 'https://invalid',
+  })
 )
 
 const seed = Effect.gen(function* () {

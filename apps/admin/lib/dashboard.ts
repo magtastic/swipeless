@@ -7,7 +7,7 @@ import {
   liveSince,
 } from '@swipeless/db/rules'
 import { adminEvents, profiles, setups } from '@swipeless/db/schema'
-import { isPhotoKey } from '@swipeless/photos'
+import { adminPhotoPath } from '@swipeless/photos'
 import {
   REVIEW_STATUSES,
   type ReviewStatus,
@@ -252,8 +252,7 @@ export const profileOverviews = (
         {
           note: {
             firstName,
-            photoUrl:
-              photoUrl && isPhotoKey(photoUrl) ? `/api/photos/${id}` : photoUrl,
+            photoUrl: adminPhotoPath(photoUrl, id),
           },
           privateDetails: details,
         },
