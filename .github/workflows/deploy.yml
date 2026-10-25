@@ -96,7 +96,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: apps/admin/.next/cache
-          key: next-admin-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ hashFiles('apps/admin/app/**', 'apps/admin/lib/**', 'apps/admin/*.ts', 'packages/*/src/**') }}
+          key: next-admin-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ hashFiles('apps/admin/app/**', 'apps/admin/lib/**', 'apps/admin/*.ts', 'apps/admin/*.json', 'apps/admin/*.mjs', 'packages/*/src/**') }}
           restore-keys: |
             next-admin-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
             next-admin-${{ runner.os }}-
