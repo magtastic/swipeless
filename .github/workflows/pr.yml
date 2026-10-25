@@ -1,17 +1,17 @@
 name: pr
 
+# Pull requests only. Pushes to main are verified by deploy.yml, which calls
+# the same verify.yml as the gate in front of migrate/deploy; running it here
+# too would verify every merge twice.
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
 
 # One run per branch. A new push to a pull request cancels the run it
-# superseded; pushes to main are never cancelled, so every main commit keeps a
-# verify result of its own.
+# superseded.
 concurrency:
   group: pr-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
