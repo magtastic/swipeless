@@ -58,10 +58,14 @@ describe.skipIf(!hasTestDb)('a pick becomes a date', () => {
     const events = await app.query((db) =>
       db.select({ payload: adminEvents.payload }).from(adminEvents)
     )
-    expect(events.map((one) => one.payload)).toEqual([
-      { country: 'IS', gender: 'woman' },
-      { country: 'IS', gender: 'man' },
-    ])
+    // No ORDER BY, so the two rows may come back in either order.
+    expect(events).toHaveLength(2)
+    expect(events.map((one) => one.payload)).toEqual(
+      expect.arrayContaining([
+        { country: 'IS', gender: 'woman' },
+        { country: 'IS', gender: 'man' },
+      ])
+    )
 
     // Nobody is live until a person has checked them.
     expect(ids(await sigrun.candidates())).toEqual([])

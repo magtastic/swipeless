@@ -124,12 +124,75 @@ export const FirstName = Schema.String.pipe(
   Schema.maxLength(80)
 ).annotations({ identifier: 'FirstName' })
 
+export const MAX_PHOTO_BYTES = 1024 * 1024
+
+const INLINE_PHOTO =
+  /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/]+={0,2})$/
+const BASE64 =
+  'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+/** The first `count` bytes a base64 string decodes to. */
+const leadingBytes = (base64: string, count: number): Array<number> => {
+  const bytes: Array<number> = []
+  let buffer = 0
+  let bits = 0
+  for (const char of base64) {
+    const value = BASE64.indexOf(char)
+    if (value < 0 || bytes.length === count) break
+    buffer = ((buffer << 6) | value) & 0xffff
+    bits += 6
+    if (bits >= 8) {
+      bits -= 8
+      bytes.push((buffer >> bits) & 0xff)
+    }
+  }
+  return bytes
+}
+
+const startsWith = (
+  bytes: ReadonlyArray<number>,
+  at: number,
+  expected: ReadonlyArray<number>
+): boolean => expected.every((byte, index) => bytes[at + index] === byte)
+
+/** "RIFF" and "WEBP" in ASCII. */
+const RIFF = [0x52, 0x49, 0x46, 0x46]
+const WEBP = [0x57, 0x45, 0x42, 0x50]
+
+/**
+ * Why an inline photo is not a real JPEG, PNG or WebP of at most 1 MiB, or
+ * undefined when it is one, or is not inline at all. The type in the data URI
+ * must match the file's own signature, so a renamed text file is refused at
+ * the contract rather than failing later, inside storage.
+ */
+export const inlinePhotoProblem = (value: string): string | undefined => {
+  const match = INLINE_PHOTO.exec(value)
+  const type = match?.[1]
+  const base64 = match?.[2]
+  if (type === undefined || base64 === undefined) return undefined
+
+  const padding = base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0
+  const size = (base64.length / 4) * 3 - padding
+  if (base64.length % 4 !== 0 || size < 12) return 'Photo is not a valid image'
+  if (size > MAX_PHOTO_BYTES) return 'Photo exceeds 1 MiB'
+
+  const head = leadingBytes(base64, 12)
+  const matches =
+    type === 'jpeg'
+      ? startsWith(head, 0, [0xff, 0xd8, 0xff])
+      : type === 'png'
+        ? startsWith(head, 0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+        : startsWith(head, 0, RIFF) && startsWith(head, 8, WEBP)
+  return matches ? undefined : 'Photo contents do not match its image type'
+}
+
 /** An HTTPS URL, or an inline image a publish uploads to private storage. */
 export const PhotoUrl = Schema.String.pipe(
   Schema.maxLength(1400000),
   Schema.pattern(
     /^(https:\/\/[^\s]+|data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2})$/
-  )
+  ),
+  Schema.filter(inlinePhotoProblem)
 ).annotations({ identifier: 'PhotoUrl' })
 
 /** Withheld until both humans say yes to a date. */

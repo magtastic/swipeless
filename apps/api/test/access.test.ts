@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { profiles } from '@swipeless/db/schema'
 import { Duration } from 'effect'
 import {
   CELLO_BRIEF,
@@ -128,24 +129,55 @@ describe.skipIf(!hasTestDb)('access', () => {
     expect(failure(await sigrun.setups())._tag).toBe('Gone')
   })
 
-  test('publish takes no token and refuses an invalid profile', async () => {
+  test('publish takes no token and refuses an invalid profile or photo', async () => {
     const valid = profile({ firstName: 'Sigrún' })
     const { photoUrl: _, ...withoutPhoto } = valid
-
-    for (const body of [{ ...valid, age: 17 }, withoutPhoto]) {
-      const res = await rest(app.handler, 'POST', '/publish', { body })
-      expect(res.status).toBe(400)
+    const inline = (type: string, bytes: Uint8Array) =>
+      `data:image/${type};base64,${Buffer.from(bytes).toString('base64')}`
+    const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+    const png = (size: number) => {
+      const bytes = new Uint8Array(size)
+      bytes.set(PNG_SIGNATURE)
+      return bytes
     }
 
-    const session = await initialize(app.handler)
-    const tool = await callTool(app.handler, session, 'swipeless_publish', {
-      ...valid,
-      age: 17,
-    })
-    expect(tool.ok).toBe(false)
+    const invalid = [
+      { ...valid, age: 17 },
+      withoutPhoto,
+      // A text file dressed up as an image.
+      {
+        ...valid,
+        photoUrl: inline(
+          'png',
+          new TextEncoder().encode('not really an image')
+        ),
+      },
+      // A real PNG claiming to be a JPEG.
+      { ...valid, photoUrl: inline('jpeg', png(64)) },
+      // A real PNG one byte over the limit.
+      { ...valid, photoUrl: inline('png', png(1024 * 1024 + 1)) },
+    ]
 
-    // Nothing half-written was left behind by the refusals.
-    const fresh = await publish(app.handler, 'rest', valid)
+    // Refused as invalid input on both transports: a 400 on REST, a tool
+    // error on MCP, never a 500 or a protocol error.
+    const session = await initialize(app.handler)
+    for (const body of invalid) {
+      const res = await rest(app.handler, 'POST', '/publish', { body })
+      expect(res.status).toBe(400)
+      const tool = await callTool(
+        app.handler,
+        session,
+        'swipeless_publish',
+        body
+      )
+      expect(tool.ok).toBe(false)
+    }
+
+    // Nothing was stored by the refusals.
+    expect(await app.query((db) => db.select().from(profiles))).toEqual([])
+    expect(app.photos.size).toBe(0)
+
+    const fresh = await publish(app.handler, 'mcp', valid)
     await app.approve(fresh.profileId)
     expect(app.photos.size).toBe(1)
   })

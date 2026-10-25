@@ -115,9 +115,11 @@ describe.skipIf(!hasTestDb)('setups', () => {
     for (const agent of [sigrun, jon]) {
       expect(ok(await agent.setups()).setups[0]?.status).toBe('confirmed')
     }
-    expect(
-      app.notifications.filter((one) => one.kind === 'dateConfirmed')
-    ).toHaveLength(2)
+    // The losing yes must not send a second date request.
+    const sent = (kind: string) =>
+      app.notifications.filter((one) => one.kind === kind)
+    expect(sent('dateRequested')).toHaveLength(1)
+    expect(sent('dateConfirmed')).toHaveLength(2)
   })
 
   test('a yes sent twice at once is still one yes', async () => {
