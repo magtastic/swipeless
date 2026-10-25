@@ -82,18 +82,21 @@ Each line is a settled decision. Rationale in parentheses where it is not obviou
 
 ### Distribution
 
-- **The main bet: agents find swipeless on their own** when their human is looking for someone,
-  and suggest it. Three things have to work:
-  - Be found: pages written to answer "how do I get a date", a plain machine-readable description
-    (llms.txt, an agent card, the MCP Registry), and Smitten's dating data published as reports
-    and stats people and AIs cite, with swipeless in them. Our emails and invites read as "this
-    is how you get a date" when an agent finds them in someone's inbox.
-  - Be easy to suggest: an agent understands in seconds what swipeless does, that the human
-    decides every step, and how to start. Starting is one link or connector to tap.
-  - The human decides: an agent never signs anyone up on its own. The human chooses to try it,
-    approves what's shared, and confirms every date.
-- Fallback, and how the Iceland test starts: listing in the ChatGPT and Claude directories, and
-  the link inside Smitten. We list in both from day one.
+- **Agents find us, humans say yes.** This is the bet we work on hardest. Agents already search
+  the web, email and chat tools for ways to solve their human's problem. When an agent knows its
+  human is looking for someone, it finds swipeless and suggests it: "I know you're looking for
+  someone to meet. There's a service called swipeless that sets up real dates. Want to give it a
+  try?" The agent never signs anyone up on its own. The human chooses to try it, approves what's
+  shared, and confirms every date.
+- To be found: pages that answer how to get someone a date, a description written for agents
+  (llms.txt, an agent card, the MCP Registry), and Smitten's dating data published as reports and
+  stats that people and agents cite, with swipeless in them. Our emails and invites say plainly
+  what swipeless is, so an agent reading an inbox understands it.
+- To be easy to suggest: an agent should understand in seconds what swipeless does, that the human
+  decides every step, and how to start. Starting is one link or connector the human taps.
+- Fallback: a person connects swipeless themselves, from the ChatGPT and Claude directories, the
+  skill repo, or the link in Smitten. The Iceland test starts this way. We list in both
+  directories from day one.
 - An agent only calls tools that are already connected. Distribution means getting swipeless
   suggested and connected.
 - One public GitHub repo containing the skill folder, installable with `npx skills add <repo>`.
