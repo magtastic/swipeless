@@ -90,6 +90,17 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      # `vercel build` runs `next build` inside the project's rootDirectory,
+      # which starts cold on every runner. Carry Next's incremental cache
+      # between deploys; a stale restore is safe, Next revalidates it.
+      - uses: actions/cache@v4
+        with:
+          path: apps/admin/.next/cache
+          key: next-admin-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ hashFiles('apps/admin/app/**', 'apps/admin/lib/**', 'apps/admin/*.ts', 'packages/*/src/**') }}
+          restore-keys: |
+            next-admin-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            next-admin-${{ runner.os }}-
+
       - uses: ./.github/actions/vercel-deploy
         with:
           project-name: swipeless-admin
