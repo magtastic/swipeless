@@ -2,4 +2,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://swipeless-web.vercel.app/sitemap.xml
+Sitemap: https://swipeless.me/sitemap.xml

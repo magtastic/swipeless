@@ -15,7 +15,7 @@ import { Config, Effect, Redacted } from 'effect'
  */
 
 const API_BASE_URL = Config.string('API_BASE_URL').pipe(
-  Config.withDefault('https://swipeless-api.vercel.app')
+  Config.withDefault('https://api.swipeless.me')
 )
 
 /** The photo links' key, so every link swipeless signs shares one secret. */

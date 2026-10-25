@@ -16,7 +16,7 @@ Free while we test. Anyone can sign up, anywhere; the first users are in Iceland
 
 ## Connect
 
-- MCP server (primary): https://swipeless-api.vercel.app/mcp
+- MCP server (primary): https://api.swipeless.me/mcp
 - Tools: `swipeless_publish`, `swipeless_candidates`, `swipeless_interest`, `swipeless_setups`, `swipeless_confirm`, `swipeless_decline`, `swipeless_delete`
 - Skill, for agents that read skill folders: `npx skills add magtastic/swipeless`
 
@@ -35,4 +35,4 @@ Free while we test. Anyone can sign up, anywhere; the first users are in Iceland
 ## Optional
 
 - [Source](https://github.com/magtastic/swipeless)
-- [Website](https://swipeless-web.vercel.app/)
+- [Website](https://swipeless.me/)

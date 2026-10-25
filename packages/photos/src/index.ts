@@ -218,7 +218,7 @@ export const ProfilePhotosLive = Layer.effect(
       Config.withDefault(Redacted.make(token))
     )
     const baseUrl = yield* Config.string('PHOTO_BASE_URL').pipe(
-      Config.withDefault('https://swipeless-admin.vercel.app')
+      Config.withDefault('https://admin.swipeless.me')
     )
     return makeProfilePhotos({
       blobs: vercelBlobStore(token),

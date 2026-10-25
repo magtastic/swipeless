@@ -209,3 +209,14 @@ bend it, noted below.
 - The photo in the email loads from `/answer/photo`, signed like the answer link and served only
   while the setup is open to that person. Stored photos' own links expire in ten minutes, too
   soon for an email.
+
+## 2026-10-25: swipeless.me
+
+- The domain is `swipeless.me`, bought through Vercel under `smitten-server`. The marketing site
+  is at the apex, the API and MCP at `api.swipeless.me`, and the admin at `admin.swipeless.me`.
+  Each one is attached to its Vercel project, and `www.swipeless.me` redirects to the apex
+  (308). This closes "Pick and buy a domain" from the
+  2026-09-11 entry.
+- Code defaults, the skill, llms.txt and the site's canonical links all name the new hosts. The
+  `swipeless-*.vercel.app` addresses keep working, so installed skills and links in emails
+  already sent don't break.
