@@ -19,6 +19,7 @@ import {
 } from '@swipeless/shared'
 import { Effect, Layer, Schema } from 'effect'
 import { type Choice, verifyAnswer } from './answer-links.ts'
+import { CurrentProfile } from './caller.ts'
 import { Swipeless } from './service.ts'
 
 /**
@@ -63,14 +64,18 @@ const closed = page('this date is no longer open', [
 
 type Service = typeof Swipeless.Service
 
+/** The signed link stands in for the bearer token: act as its person. */
+const asLinked = (params: Params) =>
+  Effect.provideService(CurrentProfile, {
+    profileId: params.profile as ProfileId,
+  })
+
 /** The caller's view of the setup, or undefined if the link does not hold. */
 const load = (swipeless: Service, params: Params) =>
   Effect.gen(function* () {
     const valid = yield* verifyAnswer(params.setup, params.profile, params.sig)
     if (!valid) return undefined
-    const { setups } = yield* swipeless.setups({
-      profileId: params.profile as ProfileId,
-    })
+    const { setups } = yield* swipeless.setups().pipe(asLinked(params))
     return setups.find(
       (setup) => setup.setupId.toLowerCase() === params.setup.toLowerCase()
     )
@@ -133,12 +138,13 @@ const answer = (swipeless: Service) =>
     const params = yield* HttpServerRequest.schemaBodyUrlParams(Params)
     const setup = yield* load(swipeless, params)
     if (setup === undefined || params.choice === undefined) return yield* closed
-    const caller = { profileId: params.profile as ProfileId }
     const setupId = setup.setupId as SetupId
     const name = escapeHtml(setup.counterpart.firstName)
 
     if (params.choice === 'no') {
-      yield* swipeless.decline(caller, new DeclineRequest({ setupId }))
+      yield* swipeless
+        .decline(new DeclineRequest({ setupId }))
+        .pipe(asLinked(params))
       return yield* page('ok, no', [
         { hand: 'ok. no it is.', size: 34 },
         { print: 'nobody is told why. we will keep looking.' },
@@ -148,10 +154,9 @@ const answer = (swipeless: Service) =>
       ])
     }
 
-    const result = yield* swipeless.confirm(
-      caller,
-      new ConfirmRequest({ setupId })
-    )
+    const result = yield* swipeless
+      .confirm(new ConfirmRequest({ setupId }))
+      .pipe(asLinked(params))
     const phone = result.privateLayer?.phone
     return yield* page("it's a date", [
       { hand: "it's a date!", size: 38 },

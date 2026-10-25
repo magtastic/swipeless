@@ -1,7 +1,7 @@
 import { DbLive, PgDrizzle } from '@swipeless/db'
 import { adminEvents, profiles } from '@swipeless/db/schema'
 import { Mailer, MailerLive, profileApproved } from '@swipeless/email'
-import { isPhotoKey } from '@swipeless/photos'
+import { adminPhotoPath } from '@swipeless/photos'
 import { asc, eq, inArray, sql } from 'drizzle-orm'
 import { Cause, Clock, Effect } from 'effect'
 import { isSuperAdmin } from './access.ts'
@@ -66,13 +66,6 @@ export type ReviewOutcome =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** A stored photo goes through the authenticated route; https links pass as is. */
-const displayablePhoto = (id: string, photoUrl: string | null) => {
-  if (!photoUrl) return null
-  if (isPhotoKey(photoUrl)) return `/api/photos/${id}`
-  return /^https:\/\//i.test(photoUrl) ? photoUrl : null
-}
-
 /** Pending profiles, oldest first: whoever has waited longest goes next. */
 export const reviewQueue = (verifiedEmail: string | null | undefined) =>
   Effect.gen(function* () {
@@ -116,7 +109,7 @@ export const reviewQueue = (verifiedEmail: string | null | undefined) =>
         row.id,
         {
           firstName: row.firstName,
-          photoUrl: displayablePhoto(row.id, row.photoUrl),
+          photoUrl: adminPhotoPath(row.photoUrl, row.id),
         } satisfies PendingNote,
       ])
     )

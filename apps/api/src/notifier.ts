@@ -1,7 +1,6 @@
 import { PgDrizzle } from '@swipeless/db'
 import { profiles, setups } from '@swipeless/db/schema'
 import { dateConfirmed, dateRequested, Mailer } from '@swipeless/email'
-import { isPhotoKey } from '@swipeless/photos'
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
@@ -103,17 +102,16 @@ export const NotifierEmail = Layer.effect(
           yes: answerUrl(setupId, profileId, 'yes'),
           no: answerUrl(setupId, profileId, 'no'),
         }).pipe(Effect.orElseSucceed(() => undefined))
-        // A stored photo goes through the signed route; https links as is.
+        // An https photo is linked as given; a stored one goes through the
+        // signed email route, which serves it while the setup is open.
         const photoUrl =
           other.photoUrl === null
             ? undefined
-            : isPhotoKey(other.photoUrl)
-              ? yield* answerPhotoUrl(setupId, profileId).pipe(
+            : /^https:\/\//i.test(other.photoUrl)
+              ? other.photoUrl
+              : yield* answerPhotoUrl(setupId, profileId).pipe(
                   Effect.orElseSucceed(() => undefined)
                 )
-              : /^https:\/\//i.test(other.photoUrl)
-                ? other.photoUrl
-                : undefined
         const fit = yield* fitWriter.whyYouFit({
           forFirstName: self.firstName,
           forBrief: self.brief,

@@ -8,9 +8,9 @@ import { Config, Effect, Redacted } from 'effect'
  *
  * The signature binds one setup to one person, so a link answers only for the
  * person it was sent to. It carries no expiry: the setup's own state decides
- * whether an answer still counts. The key is the Blob token the photo links
- * already sign with, kept apart by the `answer:` prefix, so the page needs no
- * new secret. Config is read per call, not at layer build, so the transport
+ * whether an answer still counts. The key is the one photo links sign with
+ * (`PHOTO_LINK_SECRET`, or the Blob token until that is set), kept apart by
+ * the `answer:` prefix, so the page needs no new secret. Config is read per call, not at layer build, so the transport
  * tests can build the routes without it.
  */
 
@@ -18,7 +18,9 @@ const API_BASE_URL = Config.string('API_BASE_URL').pipe(
   Config.withDefault('https://swipeless-api.vercel.app')
 )
 
-const secret = Config.redacted('BLOB_READ_WRITE_TOKEN').pipe(
+/** The photo links' key, so every link swipeless signs shares one secret. */
+const secret = Config.redacted('PHOTO_LINK_SECRET').pipe(
+  Config.orElse(() => Config.redacted('BLOB_READ_WRITE_TOKEN')),
   Effect.map(Redacted.value)
 )
 

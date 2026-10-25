@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { PgDrizzle } from '@swipeless/db'
 import {
   hasTestDb,
@@ -9,10 +8,10 @@ import {
 import type { Email } from '@swipeless/email'
 import { recordingMailer } from '@swipeless/email/testing'
 import {
-  decodePhoto,
-  PhotoLinks,
-  PhotoStorage,
-  photoLinks,
+  makeProfilePhotos,
+  memoryBlobStore,
+  ProfilePhotos,
+  type StoredPhoto,
 } from '@swipeless/photos'
 import type { ProfileId } from '@swipeless/shared'
 import {
@@ -71,7 +70,13 @@ export type App = {
   readonly travel: (duration: Duration.DurationInput) => void
   readonly now: () => number
   /** Objects in the fake blob store, by key. */
-  readonly photos: ReadonlyMap<string, { readonly bytes: Uint8Array }>
+  readonly photos: ReadonlyMap<string, StoredPhoto>
+  /** Whether the admin's photo route would accept this link at `at`. */
+  readonly photoLinkValid: (
+    profileId: string,
+    link: URLSearchParams,
+    at: number
+  ) => boolean
   /** Every message the service asked to send, oldest first. */
   readonly notifications: ReadonlyArray<Notification>
   /** Every email the admin console sent, oldest first. */
@@ -91,39 +96,30 @@ export type AppOptions = {
   readonly weeklyCap?: number
 }
 
-export const openApp = (options: AppOptions = {}): App => {
-  let at = START
+/** A clock that reads the time from `read` and sleeps for real. */
+const clockReading = (read: () => number): Clock.Clock => {
   const live = Clock.make()
-  const clock: Clock.Clock = {
+  return {
     [Clock.ClockTypeId]: Clock.ClockTypeId,
-    unsafeCurrentTimeMillis: () => at,
-    currentTimeMillis: Effect.sync(() => at),
-    unsafeCurrentTimeNanos: () => BigInt(at) * 1_000_000n,
-    currentTimeNanos: Effect.sync(() => BigInt(at) * 1_000_000n),
+    unsafeCurrentTimeMillis: read,
+    currentTimeMillis: Effect.sync(read),
+    unsafeCurrentTimeNanos: () => BigInt(read()) * 1_000_000n,
+    currentTimeNanos: Effect.sync(() => BigInt(read()) * 1_000_000n),
     sleep: (duration) => live.sleep(duration),
   }
+}
 
-  const photos = new Map<string, { bytes: Uint8Array; contentType: string }>()
-  const Photos = Layer.mergeAll(
-    Layer.succeed(
-      PhotoLinks,
-      photoLinks(PHOTO_SECRET, 'https://photos.example')
-    ),
-    Layer.succeed(
-      PhotoStorage,
-      PhotoStorage.of({
-        upload: (value) =>
-          Effect.sync(() => {
-            const photo = decodePhoto(value)
-            const key = `photos/${randomUUID()}.${photo.extension}`
-            photos.set(key, photo)
-            return key
-          }),
-        remove: (key) => Effect.sync(() => void photos.delete(key)),
-        read: (key) => Effect.sync(() => photos.get(key) ?? null),
-      })
-    )
-  )
+export const openApp = (options: AppOptions = {}): App => {
+  let at = START
+  const clock = clockReading(() => at)
+
+  const photos = new Map<string, StoredPhoto>()
+  const profilePhotos = makeProfilePhotos({
+    blobs: memoryBlobStore(photos),
+    secret: PHOTO_SECRET,
+    baseUrl: 'https://photos.example',
+  })
+  const Photos = Layer.succeed(ProfilePhotos, profilePhotos)
 
   const notifications: Array<Notification> = []
   const record =
@@ -172,6 +168,12 @@ export const openApp = (options: AppOptions = {}): App => {
     },
     now: () => at,
     photos,
+    photoLinkValid: (profileId, link, when) =>
+      Effect.runSync(
+        profilePhotos
+          .verifyLink(profileId, link)
+          .pipe(Effect.withClock(clockReading(() => when)))
+      ),
     notifications,
     emails: mailer.sent,
     approve: async (...profileIds) => {

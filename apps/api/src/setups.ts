@@ -1,11 +1,12 @@
 import { PgDrizzle } from '@swipeless/db'
 import {
-  PROFILE_TTL_DAYS,
-  profiles,
-  type SetupRow,
-  setups,
-} from '@swipeless/db/schema'
-import { PhotoLinks } from '@swipeless/photos'
+  DAY_MS,
+  effectiveStatus,
+  isLive,
+  setupRunningSql,
+} from '@swipeless/db/rules'
+import { profiles, type SetupRow, setups } from '@swipeless/db/schema'
+import { ProfilePhotos } from '@swipeless/photos'
 import {
   ConfirmResponse,
   Conflict,
@@ -22,11 +23,11 @@ import {
   type SetupStatus,
   SetupsResponse,
 } from '@swipeless/shared'
-import { and, desc, eq, gt, inArray, isNull, not, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, not, or } from 'drizzle-orm'
 import { Clock, Config, Effect, Schema } from 'effect'
+import type { AuthenticatedProfile } from './caller.ts'
 import { type DateParty, DateSuggester } from './date-suggester.ts'
 import { Notifier } from './notifier.ts'
-import type { AuthenticatedProfile } from './service.ts'
 
 /**
  * The setup: one row per pair, from an agent's pick to the release of the
@@ -59,13 +60,7 @@ import type { AuthenticatedProfile } from './service.ts'
  * may see a row, the weekly ceiling on picks, lazy expiry, and the guarded
  * write that keeps two concurrent calls from stepping on each other. The
  * adapters and `Swipeless` know none of it; they call the five methods below.
- *
- * `AuthenticatedProfile` is imported as a type only. `service.ts` imports this
- * module for real, so a value import would close a module cycle and leave
- * `SetupLifecycle` undefined for whichever file is loaded first.
  */
-
-const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
  * PRODUCT.md: "A setup with no transition for fourteen days expires."
@@ -82,26 +77,8 @@ export const SETUP_TTL_MS = 14 * DAY_MS
  */
 export const INTEREST_WINDOW_MS = 7 * DAY_MS
 
-/**
- * PRODUCT.md: "Profiles expire automatically after ninety days without a
- * check-in." Derived from the schema constant rather than imported from
- * `service.ts`, for the module-cycle reason above; the two are the same
- * ninety days.
- */
-const PROFILE_TTL_MS = PROFILE_TTL_DAYS * DAY_MS
-
 /** One side of the ordered pair. Internal: the contract speaks of "you". */
 type Side = 'a' | 'b'
-
-/**
- * Statuses that no longer age out. PRODUCT.md: "A confirmed setup does not
- * expire", and a declined or expired one has nothing left to wait for.
- */
-const SETTLED: ReadonlySet<SetupStatus> = new Set<SetupStatus>([
-  'confirmed',
-  'declined',
-  'expired',
-])
 
 /**
  * Still waiting on a human. A pick can join one of these, and either side may
@@ -114,32 +91,6 @@ const OPEN = [
 ] as const satisfies ReadonlyArray<SetupStatus>
 const isOpen = (status: SetupStatus): boolean =>
   (OPEN as ReadonlyArray<SetupStatus>).includes(status)
-
-/**
- * The status the outside world sees. Expiry is lazy: no job walks the table,
- * so a row reads as `expired` from the moment it has gone fourteen days
- * without a transition, or the suggested time has come and gone without
- * both yeses — a date in the past is not a date anyone can still say yes
- * to. Every operation answers from this, never from the stored column.
- *
- * Exported for `Swipeless.candidates`, which lets expired pairs meet again.
- */
-export const effectiveStatus = (
-  row: Pick<SetupRow, 'status' | 'expiresAt' | 'date'>,
-  at: number
-): SetupStatus =>
-  SETTLED.has(row.status)
-    ? row.status
-    : row.expiresAt.getTime() <= at || Date.parse(row.date.time) <= at
-      ? 'expired'
-      : row.status
-
-/**
- * The same rule in SQL, for guarded writes: the row has neither aged out nor
- * passed its suggested time. Stored date times are ISO-8601 instants.
- */
-const liveAt = (at: number) =>
-  sql`(${setups.expiresAt} > ${new Date(at)} and (${setups.date}->>'time')::timestamptz > ${new Date(at)})`
 
 /** The caller's side of the ordered pair, or null if they are not in it. */
 const sideIn = (row: SetupRow, profileId: ProfileId): Side | null =>
@@ -219,7 +170,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
     dependencies: [],
     effect: Effect.gen(function* () {
       const db = yield* PgDrizzle.PgDrizzle
-      const photoLinks = yield* PhotoLinks
+      const photos = yield* ProfilePhotos
       const suggester = yield* DateSuggester
       const notifier = yield* Notifier
 
@@ -374,7 +325,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             photoUrl:
               person.photoUrl === null
                 ? ''
-                : yield* photoLinks.url(person.photoUrl, person.id),
+                : yield* photos.release(person.photoUrl, person.id),
           })
         })
 
@@ -468,7 +419,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 and(
                   eq(setups.id, row.id),
                   inArray(setups.status, [...OPEN]),
-                  liveAt(at),
+                  setupRunningSql(at),
                   side === 'a'
                     ? isNull(setups.interestedAAt)
                     : isNull(setups.interestedBAt)
@@ -547,7 +498,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                 and(
                   eq(setups.id, row.id),
                   eq(setups.status, status),
-                  liveAt(at),
+                  setupRunningSql(at),
                   theirs
                 )
               )
@@ -583,7 +534,6 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             }
 
             const at = yield* Clock.currentTimeMillis
-            const activeSince = new Date(at - PROFILE_TTL_MS)
 
             const found = yield* query(
               db
@@ -615,7 +565,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
             if (
               them === undefined ||
               them.reviewStatus !== 'approved' ||
-              them.lastSeenAt.getTime() <= activeSince.getTime()
+              !isLive(them.lastSeenAt, at)
             ) {
               return yield* new NotFound()
             }
@@ -643,7 +593,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                     and(
                       eq(setups.id, existing.id),
                       inArray(setups.status, [...OPEN, 'expired']),
-                      or(eq(setups.status, 'expired'), not(liveAt(at)))
+                      or(eq(setups.status, 'expired'), not(setupRunningSql(at)))
                     )
                   )
                   .returning({ id: setups.id })
@@ -754,7 +704,7 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
                   and(
                     eq(setups.id, row.id),
                     inArray(setups.status, [...OPEN]),
-                    liveAt(at)
+                    setupRunningSql(at)
                   )
                 )
                 .returning({ id: setups.id })
