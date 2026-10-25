@@ -22,6 +22,7 @@ env:
   VERCEL_ORG_ID: team_gDnXmbne0PuTiJ95im5rbTr6
   VERCEL_API_PROJECT_ID: prj_KnEDfyETA8ldC7VZvB2YjDR1jnhk
   VERCEL_ADMIN_PROJECT_ID: prj_ImBVG3ODEhUEcAHcEMbQlaBMZTgi
+  VERCEL_WEB_PROJECT_ID: prj_iDjZRQ3A42E8tiQN89L3QdqokuZ8
 
 jobs:
   # 1. The same checks a pull request gets. Everything below depends on it, so
@@ -105,6 +106,24 @@ jobs:
         with:
           project-name: swipeless-admin
           project-id: ${{ env.VERCEL_ADMIN_PROJECT_ID }}
+          org-id: ${{ env.VERCEL_ORG_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+          cli-version: ${{ env.VERCEL_CLI_VERSION }}
+
+  # The marketing site is static files and touches no database, so it only
+  # waits for verify, not for the migration.
+  deploy-web:
+    name: deploy swipeless-web
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vercel-deploy
+        with:
+          project-name: swipeless-web
+          project-id: ${{ env.VERCEL_WEB_PROJECT_ID }}
           org-id: ${{ env.VERCEL_ORG_ID }}
           token: ${{ secrets.VERCEL_TOKEN }}
           cli-version: ${{ env.VERCEL_CLI_VERSION }}
