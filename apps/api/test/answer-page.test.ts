@@ -78,7 +78,6 @@ describe.skipIf(!hasTestDb)('answering a date request on the page', () => {
       'rest',
       man({ firstName: 'Jón', phone: '+3546905678', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId)
     const { setup } = ok(await sigrun.pick(jon.profileId))
     ok(await sigrun.confirm(setup.setupId))
     return { sigrun, jon, setupId: setup.setupId }
@@ -157,7 +156,6 @@ describe.skipIf(!hasTestDb)('answering a date request on the page', () => {
       'rest',
       man({ firstName: 'Jón', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId)
     const { setup } = ok(await sigrun.pick(jon.profileId))
     const url = await linkFor(setup.setupId, jon.profileId, 'yes')
     const query = new URLSearchParams({

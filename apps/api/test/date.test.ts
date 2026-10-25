@@ -13,7 +13,7 @@ import {
 import { hasTestDb, openApp, warnSkipped } from './support/app.ts'
 
 /**
- * The product, start to finish: two agents publish, a person approves them,
+ * The product, start to finish: two agents publish and go live at once,
  * one agent picks the other, both humans say yes, and each gets the other's
  * phone number. Sigrún's agent speaks MCP and Jón's speaks REST, so every step
  * also proves the two transports agree.
@@ -66,11 +66,7 @@ describe.skipIf(!hasTestDb)('a pick becomes a date', () => {
       ])
     )
 
-    // Nobody is live until a person has checked them.
-    expect(ids(await sigrun.candidates())).toEqual([])
-    expect(failure(await sigrun.pick(jon.profileId))._tag).toBe('NotFound')
-    await app.approve(sigrun.profileId, jon.profileId)
-
+    // Live the moment they publish: nobody approves them first.
     // Candidates carry the core and the brief, never the note or the phone.
     const forSigrun = ok(await sigrun.candidates())
     expect(forSigrun.candidates.map((one) => one.profileId)).toEqual([
@@ -204,7 +200,6 @@ describe.skipIf(!hasTestDb)('a pick becomes a date', () => {
         'rest',
         man({ firstName: 'Jón', availability: his })
       )
-      await app.approve(sigrun.profileId, jon.profileId)
       return ok(await sigrun.pick(jon.profileId)).setup.date.time
     }
 

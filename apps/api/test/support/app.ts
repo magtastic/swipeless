@@ -5,15 +5,12 @@ import {
   TestDbLive,
   truncateAll,
 } from '@swipeless/db/testing'
-import type { Email } from '@swipeless/email'
-import { recordingMailer } from '@swipeless/email/testing'
 import {
   makeProfilePhotos,
   memoryBlobStore,
   ProfilePhotos,
   type StoredPhoto,
 } from '@swipeless/photos'
-import type { ProfileId } from '@swipeless/shared'
 import {
   Clock,
   ConfigProvider,
@@ -24,7 +21,6 @@ import {
   LogLevel,
   ManagedRuntime,
 } from 'effect'
-import { decideReview } from '../../../admin/lib/review.ts'
 import { Caller } from '../../src/caller.ts'
 import { DateSuggesterRules } from '../../src/date-suggester.ts'
 import { EmbeddingModelDeterministic } from '../../src/embeddings.ts'
@@ -41,12 +37,8 @@ import { Swipeless } from '../../src/service.ts'
  * - OpenAI: embeddings are a hash of the brief, so ranking is reproducible.
  * - Vercel Blob: photos live in a Map. Image validation and link signing run real.
  * - SMS: the notifier records who would have been told what.
- * - Resend: the mailer the admin console's approval uses keeps its emails.
  * - The wall clock: frozen at START until a test travels, so expiry, the weekly
  *   cap and the suggested date are exact.
- *
- * Profiles are approved the way the admin console approves them, through
- * `decideReview`, as the super admin.
  */
 
 export { hasTestDb }
@@ -54,7 +46,6 @@ export { hasTestDb }
 /** Tuesday 2026-09-01 09:00 UTC. */
 export const START = Date.parse('2026-09-01T09:00:00Z')
 export const PHOTO_SECRET = 'test-only-secret'
-const SUPER_ADMIN = 'magnus@smitten.fun'
 
 export type WebHandler = (request: Request) => Promise<Response>
 
@@ -79,10 +70,6 @@ export type App = {
   ) => boolean
   /** Every message the service asked to send, oldest first. */
   readonly notifications: ReadonlyArray<Notification>
-  /** Every email the admin console sent, oldest first. */
-  readonly emails: ReadonlyArray<Email>
-  /** The reviewer approves a profile in the admin console. */
-  readonly approve: (...profileIds: ReadonlyArray<ProfileId>) => Promise<void>
   /** Reads straight from the database, for what no endpoint shows. */
   readonly query: <A>(
     f: (db: PgDrizzle.PgDrizzle['Type']) => Effect.Effect<A, unknown>
@@ -133,8 +120,6 @@ export const openApp = (options: AppOptions = {}): App => {
     })
   )
 
-  const mailer = recordingMailer()
-
   const config =
     options.weeklyCap === undefined
       ? Layer.empty
@@ -149,7 +134,6 @@ export const openApp = (options: AppOptions = {}): App => {
     Layer.provide(DateSuggesterRules),
     Layer.provide(RecordingNotifier),
     Layer.provide(Photos),
-    Layer.provideMerge(mailer.layer),
     Layer.provideMerge(TestDbLive),
     Layer.provide(config),
     Layer.provide(Layer.setClock(clock)),
@@ -175,24 +159,12 @@ export const openApp = (options: AppOptions = {}): App => {
           .pipe(Effect.withClock(clockReading(() => when)))
       ),
     notifications,
-    emails: mailer.sent,
-    approve: async (...profileIds) => {
-      for (const profileId of profileIds) {
-        const outcome = await runtime.runPromise(
-          decideReview(profileId, 'approved', SUPER_ADMIN)
-        )
-        if (outcome._tag !== 'Decided') {
-          throw new Error(`could not approve ${profileId}: ${outcome._tag}`)
-        }
-      }
-    },
     query: (f) =>
       runtime.runPromise(Effect.flatMap(PgDrizzle.PgDrizzle, (db) => f(db))),
     reset: async () => {
       at = START
       photos.clear()
       notifications.length = 0
-      mailer.sent.length = 0
       if (!migrated) {
         await runtime.runPromise(migrate)
         migrated = true

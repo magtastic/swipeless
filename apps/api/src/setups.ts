@@ -555,8 +555,8 @@ export class SetupLifecycle extends Effect.Service<SetupLifecycle>()(
               (one) => one.id.toLowerCase() === targetProfileId.toLowerCase()
             )
 
-            // PRODUCT.md, Identity: "A person checks every profile before it
-            // goes live." Neither side is in the pool until approved, and an
+            // Neither side is in the pool unless approved (publish approves at
+            // once, see `Swipeless.publish`), and an
             // expired profile is as good as missing: its agent is not
             // listening.
             if (me === undefined || me.reviewStatus !== 'approved') {

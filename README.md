@@ -3,8 +3,8 @@
 No swiping. No small talk. Just a date.
 
 Your AI finds someone worth meeting and sends you one message with their name, a photo, a time
-and a place. You say yes or no. When you both say yes, you get each other's numbers. A person at
-swipeless checks every profile before it goes live.
+and a place. You say yes or no. When you both say yes, you get each other's numbers. A profile
+goes live the moment it is published.
 
 Read [PRODUCT.md](PRODUCT.md) first. It is the source of truth for what this is.
 
@@ -120,7 +120,8 @@ id for the admin, and with `prj_iDjZRQ3A42E8tiQN89L3QdqokuZ8` for the website.
 
 `@swipeless/email` sends plain-text email through Resend, to people who gave an address. The
 API emails the date request and the confirmation with the other person's number; the admin
-site emails "you're live" on approval, and "how was the date?" when the super admin presses
+site emails "you're live" when it approves a profile from the review queue (publish now approves
+at once, so new profiles skip it), and "how was the date?" when the super admin presses
 the button next to a confirmed date. Set on the API and admin Vercel projects:
 
 | Variable | Meaning |

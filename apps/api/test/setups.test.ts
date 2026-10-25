@@ -35,7 +35,6 @@ describe.skipIf(!hasTestDb)('setups', () => {
       'rest',
       man({ firstName: 'Jón', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId)
     return [sigrun, jon]
   }
 

@@ -48,7 +48,7 @@ export const profiles = pgTable(
     // Private layer, released only when both say yes
     phone: text().notNull(),
 
-    /** A person checks every profile before it goes live. Only approved ones match. */
+    /** Only approved ones match. Publish writes 'approved'; the default is unused. */
     reviewStatus: reviewStatusEnum().notNull().default('pending'),
     reviewedAt: timestamp({ withTimezone: true }),
 

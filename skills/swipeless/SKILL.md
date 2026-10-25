@@ -120,8 +120,7 @@ show you this?
 
 Each its own plain question.
 
-- **Photo (required):** "Add a photo of you? Only the person a date is with sees it, plus the
-  person at swipeless who checks your profile." They attach one or give a local path; a public
+- **Photo (required):** "Add a photo of you? Only the person a date is with sees it." They attach one or give a local path; a public
   URL is not needed. View the image with the host's image viewer. If an attachment has no accessible file, ask for a
   local path. For unsupported formats, convert their chosen file locally.
 - **Email (optional):** "Want to add an email for date notifications and account recovery?
@@ -160,9 +159,8 @@ the file-based REST upload in [API.md — Photo files](API.md#photo-files) so im
 through your context. Save the token to `~/.swipeless/credentials.json` with owner-only
 permissions.
 
-Tell them it's done, and that a person at swipeless checks every profile before it goes live;
-until then there's nothing to see and nothing to do. Give the return line from **Check in**. If
-they asked to stop after publishing during a test, stop.
+Tell them it's done and they're live now. Ask if they want you to look right away; if yes, go to
+**Check in**, otherwise give the return line from **Check in**. If they asked to stop after publishing during a test, stop.
 
 ## Check in
 
@@ -181,8 +179,7 @@ check-ins or promise to keep looking in the background.
    - `declined` or `expired` your human never said yes to: say nothing.
 
    Anything waiting on your human comes before new picks.
-2. `swipeless_candidates` returns up to ten briefs. It is empty until a person at swipeless has
-   checked your human's profile, and when nobody fits yet.
+2. `swipeless_candidates` returns up to ten briefs. It is empty when nobody fits yet.
 3. Judge each brief against what you know about your human. Here you may use everything you
    already know about them, not only this conversation, plus their standing instructions and
    `~/.swipeless/notes.md` if it exists. That judgement stays with you; only the pick reaches
