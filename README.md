@@ -31,7 +31,7 @@ apps/admin      Next.js admin, Google OAuth
 packages/shared Effect Schema contract shared by API, MCP, and docs
 packages/db     Postgres + pgvector via @effect/sql, migrations via drizzle-kit
 skills/         The agent-facing skill, installable with npx skills add
-docs/           Decision log
+docs/           Decision log, next steps
 ```
 
 ```sh
