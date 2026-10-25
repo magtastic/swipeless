@@ -55,8 +55,10 @@ test('the note escapes names, and the date request links its boxes', () => {
     'Jón & co',
     date,
     {
-      yes: 'https://x.test/answer?choice=yes&sig=1',
-      no: 'https://x.test/answer?choice=no&sig=1',
+      answer: {
+        yes: 'https://x.test/answer?choice=yes&sig=1',
+        no: 'https://x.test/answer?choice=no&sig=1',
+      },
     }
   )
   expect(email.html).toContain('&lt;b&gt;Anna&lt;/b&gt;')
@@ -66,6 +68,19 @@ test('the note escapes names, and the date request links its boxes', () => {
     'href="https://x.test/answer?choice=yes&amp;sig=1"'
   )
   expect(email.text).toContain('yes: https://x.test/answer?choice=yes&sig=1')
+})
+
+test('the date request carries the photo and why they might click, not the address', () => {
+  const email = dateRequested('a@example.com', 'Anna', 'Jón', date, {
+    photoUrl: 'https://x.test/answer/photo?sig=1',
+    fit: 'you both swim in the sea <every> morning.',
+  })
+  expect(email.html).toContain('<img src="https://x.test/answer/photo?sig=1"')
+  expect(email.html).toContain(
+    'you both swim in the sea &lt;every&gt; morning.'
+  )
+  expect(email.text).toContain('you both swim in the sea <every> morning.')
+  expect(email.html).not.toContain('Melhagi 20')
 })
 
 test('every email carries the handwritten note', () => {

@@ -56,3 +56,19 @@ export const verifyAnswer = (
       Buffer.from(sign(key, setupId, profileId), 'hex')
     )
   })
+
+/**
+ * The other person's photo for an email, behind the same signature. Stored
+ * photos sit behind links that expire in minutes; this one holds as long as
+ * the setup is open to this person, and stops when it closes.
+ */
+export const answerPhotoUrl = (setupId: string, profileId: string) =>
+  Effect.gen(function* () {
+    const base = yield* API_BASE_URL
+    const query = new URLSearchParams({
+      setup: setupId,
+      profile: profileId,
+      sig: sign(yield* secret, setupId, profileId),
+    })
+    return `${base}/answer/photo?${query}`
+  })

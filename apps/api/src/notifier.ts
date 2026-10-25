@@ -1,10 +1,12 @@
 import { PgDrizzle } from '@swipeless/db'
 import { profiles, setups } from '@swipeless/db/schema'
 import { dateConfirmed, dateRequested, Mailer } from '@swipeless/email'
+import { isPhotoKey } from '@swipeless/photos'
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
-import { answerUrl } from './answer-links.ts'
+import { answerPhotoUrl, answerUrl } from './answer-links.ts'
+import { FitWriter } from './fit-writer.ts'
 
 /**
  * PRODUCT.md, SMS, email and small pages: "Everything after signup reaches
@@ -45,6 +47,7 @@ export const NotifierEmail = Layer.effect(
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle
     const mailer = yield* Mailer
+    const fitWriter = yield* FitWriter
 
     /** The setup, the person hearing the news, and the other one. */
     const load = (profileId: ProfileId, setupId: SetupId) =>
@@ -67,6 +70,8 @@ export const NotifierEmail = Layer.effect(
             firstName: profiles.firstName,
             email: profiles.email,
             phone: profiles.phone,
+            photoUrl: profiles.photoUrl,
+            brief: profiles.brief,
           })
           .from(profiles)
           .where(inArray(profiles.id, [profileId, otherId]))
@@ -74,6 +79,52 @@ export const NotifierEmail = Layer.effect(
         const other = people.find((person) => person.id === otherId)
         if (self === undefined || other === undefined) return undefined
         return { date: row.date, self, other }
+      })
+
+    type Person = {
+      readonly firstName: string
+      readonly photoUrl: string | null
+      readonly brief: string
+    }
+
+    /**
+     * The answer links, the photo and why they might click. Each is
+     * optional: without a signing key or a model the email still goes,
+     * pointing at the agent instead.
+     */
+    const requestExtras = (
+      setupId: SetupId,
+      profileId: ProfileId,
+      self: Person,
+      other: Person
+    ) =>
+      Effect.gen(function* () {
+        const answer = yield* Effect.all({
+          yes: answerUrl(setupId, profileId, 'yes'),
+          no: answerUrl(setupId, profileId, 'no'),
+        }).pipe(Effect.orElseSucceed(() => undefined))
+        // A stored photo goes through the signed route; https links as is.
+        const photoUrl =
+          other.photoUrl === null
+            ? undefined
+            : isPhotoKey(other.photoUrl)
+              ? yield* answerPhotoUrl(setupId, profileId).pipe(
+                  Effect.orElseSucceed(() => undefined)
+                )
+              : /^https:\/\//i.test(other.photoUrl)
+                ? other.photoUrl
+                : undefined
+        const fit = yield* fitWriter.whyYouFit({
+          forFirstName: self.firstName,
+          forBrief: self.brief,
+          otherFirstName: other.firstName,
+          otherBrief: other.brief,
+        })
+        return {
+          ...(answer ? { answer } : {}),
+          ...(photoUrl ? { photoUrl } : {}),
+          ...(fit ? { fit } : {}),
+        }
       })
 
     const notify = (
@@ -88,22 +139,20 @@ export const NotifierEmail = Layer.effect(
         }
         const { date, self, other } = found
         const to = found.self.email
-        // The small page lets them answer without their agent. Without a
-        // signing key the email still goes, pointing at the agent instead.
-        const answer = yield* Effect.all({
-          yes: answerUrl(setupId, profileId, 'yes'),
-          no: answerUrl(setupId, profileId, 'no'),
-        }).pipe(Effect.orElseSucceed(() => undefined))
+        if (kind === 'date requested') {
+          yield* mailer.send(
+            dateRequested(
+              to,
+              self.firstName,
+              other.firstName,
+              date,
+              yield* requestExtras(setupId, profileId, self, other)
+            )
+          )
+          return yield* Effect.logInfo(`notify: ${kind}, emailed`)
+        }
         yield* mailer.send(
-          kind === 'date requested'
-            ? dateRequested(to, self.firstName, other.firstName, date, answer)
-            : dateConfirmed(
-                to,
-                self.firstName,
-                other.firstName,
-                other.phone,
-                date
-              )
+          dateConfirmed(to, self.firstName, other.firstName, other.phone, date)
         )
         yield* Effect.logInfo(`notify: ${kind}, emailed`)
       }).pipe(

@@ -152,3 +152,28 @@ test('a setup already answered shows the closed page', async () => {
   )
   expect(await response.text()).toContain('no longer open')
 })
+
+test('the photo route refuses a bad signature and an unsent request', async () => {
+  const handler = openHandler(
+    fakeApp({
+      setups: () =>
+        Effect.succeed(new SetupsResponse({ setups: [FAKE_SETUP] })),
+    })
+  )
+  const url = await linkFor('yes')
+  const query = new URLSearchParams({
+    setup: url.searchParams.get('setup') ?? '',
+    profile: url.searchParams.get('profile') ?? '',
+    sig: url.searchParams.get('sig') ?? '',
+  })
+  // FAKE_SETUP is still `suggested`: no photo before the request is sent.
+  const early = await handler(
+    new Request(`http://localhost/answer/photo?${query}`)
+  )
+  expect(early.status).toBe(404)
+  query.set('sig', '0'.repeat(64))
+  const forged = await handler(
+    new Request(`http://localhost/answer/photo?${query}`)
+  )
+  expect(forged.status).toBe(404)
+})

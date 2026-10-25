@@ -98,7 +98,6 @@ const ask = (params: Params, setup: Setup) => {
     { hand: 'would like to meet you.' },
     { blank: true },
     { hand: `where: ${escapeHtml(date.venue.name)}` },
-    { print: escapeHtml(date.venue.address) },
     { hand: `when: ${highlight(escapeHtml(formatDateTime(date.time)))}` },
     { blank: true },
     { hand: 'do you want to go out?', size: 34 },
@@ -171,12 +170,57 @@ const answer = (swipeless: Service) =>
     ])
   }).pipe(Effect.catchAll(() => closed))
 
-/** GET shows the note, POST answers it. */
+const PhotoParams = Schema.Struct({
+  setup: Schema.String,
+  profile: Schema.String,
+  sig: Schema.String,
+})
+
+const noPhoto = HttpServerResponse.empty({ status: 404 })
+
+/**
+ * The other person's photo for the date request email. Same signature as the
+ * page, and only while the setup is open to this person; then it is gone.
+ * Proxied from the short-lived link the setup view carries, so the email
+ * never holds a link to the stored photo itself.
+ */
+const photo = (swipeless: Service) =>
+  Effect.gen(function* () {
+    const params = yield* HttpServerRequest.schemaSearchParams(PhotoParams)
+    const setup = yield* load(swipeless, params)
+    if (
+      setup === undefined ||
+      (setup.status !== 'requested' && setup.status !== 'confirmed')
+    ) {
+      return yield* noPhoto
+    }
+    const response = yield* Effect.tryPromise(() =>
+      fetch(setup.counterpart.photoUrl, { signal: AbortSignal.timeout(10_000) })
+    )
+    const contentType = response.headers.get('content-type') ?? ''
+    if (!response.ok || !/^image\/(jpeg|png|webp|gif)$/.test(contentType)) {
+      return yield* noPhoto
+    }
+    const bytes = new Uint8Array(
+      yield* Effect.tryPromise(() => response.arrayBuffer())
+    )
+    return HttpServerResponse.uint8Array(bytes, {
+      contentType,
+      headers: {
+        'cache-control': 'private, max-age=3600',
+        'referrer-policy': 'no-referrer',
+        'x-robots-tag': 'noindex',
+      },
+    })
+  }).pipe(Effect.catchAll(() => noPhoto))
+
+/** GET shows the note, POST answers it, and the email's photo comes from here. */
 export const AnswerRoutes = Layer.unwrapEffect(
   Effect.map(Swipeless, (swipeless) =>
     Layer.mergeAll(
       HttpLayerRouter.add('GET', '/answer', show(swipeless)),
-      HttpLayerRouter.add('POST', '/answer', answer(swipeless))
+      HttpLayerRouter.add('POST', '/answer', answer(swipeless)),
+      HttpLayerRouter.add('GET', '/answer/photo', photo(swipeless))
     )
   )
 )

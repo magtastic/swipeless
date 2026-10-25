@@ -17,6 +17,7 @@ import {
 import { recordingMailer } from '@swipeless/email/testing'
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { Effect, Layer, ManagedRuntime } from 'effect'
+import { FitWriter } from '../src/fit-writer.ts'
 import { Notifier, NotifierEmail } from '../src/notifier.ts'
 import { FAKE_DATE } from './support/seams.ts'
 
@@ -29,6 +30,15 @@ const mailer = recordingMailer()
 const runtime = ManagedRuntime.make(
   NotifierEmail.pipe(
     Layer.provide(mailer.layer),
+    Layer.provide(
+      Layer.succeed(
+        FitWriter,
+        FitWriter.of({
+          whyYouFit: ({ otherFirstName }) =>
+            Effect.succeed(`you and ${otherFirstName} both swim in the sea.`),
+        })
+      )
+    ),
     Layer.provideMerge(TestDbLive)
   )
 )
@@ -100,6 +110,7 @@ describe.skipIf(!hasTestDb)('NotifierEmail', () => {
     expect(email?.subject).toBe('Name1 would like to meet you')
     expect(email?.text).toContain(FAKE_DATE.venue.name)
     expect(email?.text).not.toContain('+35482200')
+    expect(email?.text).toContain('you and Name1 both swim in the sea.')
   })
 
   test('the confirmation carries the other phone number', async () => {

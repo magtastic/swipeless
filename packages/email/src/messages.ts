@@ -33,7 +33,6 @@ const where = (date: DatePlace) =>
 /** The place and the time as ruled lines, with the time highlighted. */
 const whereLines = (date: DatePlace): ReadonlyArray<Line> => [
   { hand: `where: ${escapeHtml(date.venue.name)}` },
-  { print: escapeHtml(date.venue.address) },
   { hand: `when: ${highlight(escapeHtml(formatDateTime(date.time)))}` },
 ]
 
@@ -77,9 +76,20 @@ export interface AnswerLinks {
   readonly no: string
 }
 
+/** What makes a date request a note rather than a notice. All optional. */
+export interface DateRequestExtras {
+  /** The small page, so they can answer without their agent. */
+  readonly answer?: AnswerLinks
+  /** An https URL that stays good for as long as the request is open. */
+  readonly photoUrl?: string
+  /** "Why the two of you might click", one or two plain sentences. */
+  readonly fit?: string
+}
+
 /**
- * The date request: one human said yes, and this is the other. With answer
- * links the boxes open the small page; without, they answer through their
+ * The date request: one human said yes, and this is the other. PRODUCT.md:
+ * the note shows "first name and photo, … why the two of you might click,
+ * the place, and the time". Without answer links the boxes point at their
  * agent.
  */
 export const dateRequested = (
@@ -87,39 +97,52 @@ export const dateRequested = (
   firstName: string,
   otherFirstName: string,
   date: DatePlace,
-  answer?: AnswerLinks
-): Email => ({
-  to,
-  subject: `${otherFirstName} would like to meet you`,
-  text: [
-    `hi ${firstName},`,
-    `${otherFirstName} would like to meet you.`,
-    where(date),
-    answer
-      ? `do you want to go out?\n\nyes: ${answer.yes}\nno: ${answer.no}\n\nno is always enough, and nobody is told why.`
-      : 'do you want to go out? ask your agent about swipeless to see who they are, then say yes or no. no is always enough, and nobody is told why.',
-    SIGN_OFF,
-  ].join('\n\n'),
-  html: note(`${otherFirstName} would like to meet you.`, [
-    hi(firstName),
-    { hand: `${escapeHtml(otherFirstName)} would like to meet you.` },
-    blank,
-    ...whereLines(date),
-    blank,
-    { hand: 'do you want to go out?', size: 34 },
-    {
-      hand: `${checkbox('yes', answer?.yes)}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${checkbox('no', answer?.no)}`,
-      size: 34,
-    },
-    {
-      print: answer
-        ? 'tick one to see their photo and answer. no is always enough, and nobody is told why.'
-        : 'tell your agent yes or no. ask it about swipeless to see who they are. no is always enough, and nobody is told why.',
-    },
-    blank,
-    signOff,
-  ]),
-})
+  extras: DateRequestExtras = {}
+): Email => {
+  const { answer, photoUrl, fit } = extras
+  const name = escapeHtml(otherFirstName)
+  return {
+    to,
+    subject: `${otherFirstName} would like to meet you`,
+    text: [
+      `hi ${firstName},`,
+      `${otherFirstName} would like to meet you.`,
+      ...(fit ? [fit] : []),
+      where(date),
+      answer
+        ? `do you want to go out?\n\nyes: ${answer.yes}\nno: ${answer.no}\n\nno is always enough, and nobody is told why.`
+        : 'do you want to go out? ask your agent about swipeless to see who they are, then say yes or no. no is always enough, and nobody is told why.',
+      SIGN_OFF,
+    ].join('\n\n'),
+    html: note(`${otherFirstName} would like to meet you.`, [
+      hi(firstName),
+      ...(photoUrl
+        ? [
+            {
+              hand: `<img src="${escapeHtml(photoUrl)}" alt="${name}" width="180" style="display:block;width:180px;max-width:100%;height:auto;border-radius:4px;margin:12px 0;">`,
+            },
+          ]
+        : []),
+      { hand: `${name} would like to meet you.` },
+      ...(fit ? [{ hand: escapeHtml(fit), size: 24 }] : []),
+      blank,
+      ...whereLines(date),
+      blank,
+      { hand: 'do you want to go out?', size: 34 },
+      {
+        hand: `${checkbox('yes', answer?.yes)}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${checkbox('no', answer?.no)}`,
+        size: 34,
+      },
+      {
+        print: answer
+          ? 'tick one to answer. no is always enough, and nobody is told why.'
+          : 'tell your agent yes or no. no is always enough, and nobody is told why.',
+      },
+      blank,
+      signOff,
+    ]),
+  }
+}
 
 /** Both said yes: "both get the other's phone number". */
 export const dateConfirmed = (
