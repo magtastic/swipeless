@@ -1,8 +1,8 @@
 name: vercel-deploy
 description: >-
-  Build and deploy one Vercel project to production with the prebuilt flow.
-  Runs from the repository root; the project's own rootDirectory setting points
-  the build at the right subdirectory.
+  Build and deploy one Vercel project with the prebuilt flow, to production or
+  as a preview. Runs from the repository root; the project's own rootDirectory
+  setting points the build at the right subdirectory.
 
 inputs:
   project-name:
@@ -20,10 +20,14 @@ inputs:
   cli-version:
     description: Exact vercel CLI version to install.
     required: true
+  environment:
+    description: production or preview.
+    required: false
+    default: production
 
 outputs:
   url:
-    description: The production deployment URL.
+    description: The deployment URL.
     value: ${{ steps.deploy.outputs.url }}
 
 runs:
@@ -51,21 +55,23 @@ runs:
     # VERCEL_ORG_ID + VERCEL_PROJECT_ID are how pull/build/deploy know which of
     # the two projects they are acting on. Neither project is linked to the
     # GitHub repo on Vercel's side: Actions owns deployment so tests gate it.
-    - name: Pull production settings
+    - name: Pull ${{ inputs.environment }} settings
       shell: bash
       env:
         VERCEL_ORG_ID: ${{ inputs.org-id }}
         VERCEL_PROJECT_ID: ${{ inputs.project-id }}
         VERCEL_TOKEN: ${{ inputs.token }}
-      run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+      run: vercel pull --yes --environment=${{ inputs.environment }} --token="$VERCEL_TOKEN"
 
+    # --prod only for production; without it build and deploy make a preview.
     - name: Build
       shell: bash
       env:
         VERCEL_ORG_ID: ${{ inputs.org-id }}
         VERCEL_PROJECT_ID: ${{ inputs.project-id }}
         VERCEL_TOKEN: ${{ inputs.token }}
-      run: vercel build --prod --token="$VERCEL_TOKEN"
+        PROD_FLAG: ${{ inputs.environment == 'production' && '--prod' || '' }}
+      run: vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
 
     - name: Deploy
       id: deploy
@@ -74,12 +80,13 @@ runs:
         VERCEL_ORG_ID: ${{ inputs.org-id }}
         VERCEL_PROJECT_ID: ${{ inputs.project-id }}
         VERCEL_TOKEN: ${{ inputs.token }}
+        PROD_FLAG: ${{ inputs.environment == 'production' && '--prod' || '' }}
       run: |
         set -euo pipefail
-        url=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+        url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
         echo "url=$url" >> "$GITHUB_OUTPUT"
         {
-          echo "### ${{ inputs.project-name }}"
+          echo "### ${{ inputs.project-name }} (${{ inputs.environment }})"
           echo
           echo "Deployed to $url"
         } >> "$GITHUB_STEP_SUMMARY"
