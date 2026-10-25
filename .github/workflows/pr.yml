@@ -16,6 +16,47 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  VERCEL_CLI_VERSION: 59.16.0
+  # Same team and project as deploy.yml.
+  VERCEL_ORG_ID: team_gDnXmbne0PuTiJ95im5rbTr6
+  VERCEL_WEB_PROJECT_ID: prj_iDjZRQ3A42E8tiQN89L3QdqokuZ8
+
 jobs:
   verify:
     uses: ./.github/workflows/verify.yml
+
+  # A preview of the marketing site for every pull request, linked from the PR
+  # body. Only the site: the API and admin would need a database of their own
+  # to preview against, and a preview must never touch production's. It does
+  # not wait for verify, so the link shows up while the tests run.
+  preview-web:
+    name: preview swipeless-web
+    # Pull requests from forks cannot read the Vercel token.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/vercel-deploy
+        id: deploy
+        with:
+          project-name: swipeless-web
+          project-id: ${{ env.VERCEL_WEB_PROJECT_ID }}
+          org-id: ${{ env.VERCEL_ORG_ID }}
+          token: ${{ secrets.VERCEL_TOKEN }}
+          cli-version: ${{ env.VERCEL_CLI_VERSION }}
+          environment: preview
+
+      - name: Put the preview link in the PR body
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        with:
+          script: |
+            const script = require('./.github/scripts/update-preview-deployment.js');
+            await script({ github, context, core });
