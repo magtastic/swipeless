@@ -118,16 +118,24 @@ const nextSlot = (slot: Slot, from: number, offsetMinutes: number): number => {
 const WEEKEND = /weekend|saturday|laugardag|helg/i
 const EVENING = /weekday|evening|thursday|after work|kvöld/i
 
-/** The slots this side's availability says it can make, possibly none. */
-const supportedSlots = (party: DateParty): ReadonlyArray<Slot> => [
-  ...(EVENING.test(party.availability) ? [THURSDAY_EVENING] : []),
-  ...(WEEKEND.test(party.availability) ? [SATURDAY_AFTERNOON] : []),
-]
+/**
+ * The slots this side's availability says it can make. Text that names no
+ * slot the rules recognise ("flexible", "most days") rules nothing out, so it
+ * supports every slot: otherwise a weekend-only person paired with it would
+ * get the Thursday fallback, a date they said they cannot make.
+ */
+const supportedSlots = (party: DateParty): ReadonlyArray<Slot> => {
+  const named = [
+    ...(EVENING.test(party.availability) ? [THURSDAY_EVENING] : []),
+    ...(WEEKEND.test(party.availability) ? [SATURDAY_AFTERNOON] : []),
+  ]
+  return named.length === 0 ? [THURSDAY_EVENING, SATURDAY_AFTERNOON] : named
+}
 
 /**
  * PRODUCT.md, The setup and the date: "a time that fits both
- * availabilities". The slots both sides can make; empty when they share
- * none, or when either side's text names nothing the rules recognise.
+ * availabilities". The slots both sides can make; empty only when both name
+ * slots and they share none.
  */
 const sharedSlots = (a: DateParty, b: DateParty): ReadonlyArray<Slot> => {
   const theirs = supportedSlots(b)

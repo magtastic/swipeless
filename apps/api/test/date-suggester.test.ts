@@ -85,13 +85,22 @@ describe('DateSuggesterRules', () => {
     expect(date.time).toBe('2026-10-29T19:30:00.000Z')
   })
 
-  test('with nothing recognisable, falls back to Thursday evening', async () => {
+  test('text naming no slot rules nothing out: the other side decides', async () => {
+    const date = await suggestAt(
+      WEDNESDAY_NOON,
+      party(A, { availability: 'weekends' }),
+      party(B, { availability: 'flexible' })
+    )
+    expect(date.time).toBe('2026-10-24T15:00:00.000Z')
+  })
+
+  test('with nothing recognisable on either side, takes the earliest slot', async () => {
     const date = await suggestAt(
       WEDNESDAY_NOON,
       party(A, { availability: 'whenever suits' }),
       party(B, { availability: 'flexible' })
     )
-    expect(date.time).toBe('2026-10-29T19:30:00.000Z')
+    expect(date.time).toBe('2026-10-24T15:00:00.000Z')
   })
 
   test('never sooner than two days out', async () => {
