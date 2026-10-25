@@ -48,7 +48,7 @@ describe.skipIf(!hasTestDb)('matching', () => {
       interestedIn: ['woman'],
       brief: CELLO_BRIEF,
     })
-    const excluded = await Promise.all([
+    await Promise.all([
       // Sigrún is not interested in women.
       join({ firstName: 'Halla', gender: 'woman', interestedIn: ['woman'] }),
       // Not interested in Sigrún's gender.

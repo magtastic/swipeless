@@ -175,7 +175,7 @@ describe.skipIf(!hasTestDb)('access', () => {
     expect(await app.query((db) => db.select().from(profiles))).toEqual([])
     expect(app.photos.size).toBe(0)
 
-    const fresh = await publish(app.handler, 'mcp', valid)
+    await publish(app.handler, 'mcp', valid)
     expect(app.photos.size).toBe(1)
   })
 })
