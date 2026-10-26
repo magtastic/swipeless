@@ -1,5 +1,4 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
-import { createHmac } from 'node:crypto'
 import { CELLO_BRIEF, ids, man, ok, profile, publish } from './support/agent.ts'
 import { hasTestDb, openApp, warnSkipped } from './support/app.ts'
 
@@ -7,8 +6,9 @@ import { hasTestDb, openApp, warnSkipped } from './support/app.ts'
  * The staged date request for the live demo (docs/decisions.md, 2026-10-26),
  * over the whole app: the presenter publishes from ChatGPT, the prepared
  * match picks him and says yes after the delay, he gets the date request by
- * text, answers by replying yes, and both get the other's number. The match
- * carries our own Twilio number, which is never texted.
+ * text with a short swipeless.me link, says yes on the page, and both get the
+ * other's number. The match carries our own Twilio number, which the
+ * alphanumeric sender cannot text; that never stops the yes.
  */
 
 process.env.BLOB_READ_WRITE_TOKEN ??= 'test-signing-key'
@@ -18,20 +18,10 @@ warnSkipped('showcase.test.ts')
 
 const PRESENTER = '+3548470454'
 const MATCH_PHONE = '+13347215271'
-const AUTH_TOKEN = 'test-twilio-token'
-const INBOUND_URL = 'http://answer.test/sms/inbound'
 
-/** Signs a form the way Twilio does: the URL, then each field sorted by name. */
-const twilioSign = (url: string, form: URLSearchParams, token = AUTH_TOKEN) =>
-  createHmac('sha1', token)
-    .update(
-      url +
-        [...form]
-          .sort(([a], [b]) => (a < b ? -1 : 1))
-          .map(([name, value]) => name + value)
-          .join('')
-    )
-    .digest('base64')
+/** The code in a text's `swipeless.me/a/<code>` link. */
+const codeIn = (body: string) =>
+  body.match(/swipeless\.me\/a\/([0-9A-Za-z]+)/)?.[1] ?? ''
 
 describe.skipIf(!hasTestDb)('the showcase date request', () => {
   const app = openApp()
@@ -47,32 +37,19 @@ describe.skipIf(!hasTestDb)('the showcase date request', () => {
     )
     app.env.set('SHOWCASE_PHONE', PRESENTER)
     app.env.set('SHOWCASE_MATCH_PROFILE_ID', katrin.profileId)
-    app.env.set('SMS_FROM', MATCH_PHONE)
-    app.env.set('TWILIO_AUTH_TOKEN', AUTH_TOKEN)
     return katrin
   }
 
-  /** A text from `from`, as Twilio posts it to the webhook. */
-  const reply = (body: string, from = PRESENTER, token = AUTH_TOKEN) => {
-    const form = new URLSearchParams({
-      MessageSid: 'SM00000000000000000000000000000000',
-      From: from,
-      To: MATCH_PHONE,
-      Body: body,
-    })
-    return app.handler(
-      new Request('https://api.swipeless.me/sms/inbound', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/x-www-form-urlencoded',
-          'x-twilio-signature': twilioSign(INBOUND_URL, form, token),
-        },
-        body: form,
+  /** The short link, as swipeless.me proxies it to the API. */
+  const short = (code: string, choice?: 'yes' | 'no') =>
+    app.handler(
+      new Request(`https://api.swipeless.me/a/${code}`, {
+        method: choice ? 'POST' : 'GET',
+        ...(choice ? { body: new URLSearchParams({ choice }) } : {}),
       })
     )
-  }
 
-  test('he publishes, is asked by text after the delay, and replies yes', async () => {
+  test('he publishes, is texted a short link after the delay, and says yes on the page', async () => {
     const katrin = await prepare()
     const magnus = await publish(
       app.handler,
@@ -91,9 +68,11 @@ describe.skipIf(!hasTestDb)('the showcase date request', () => {
     expect(request).toStartWith(
       'hi Magnús. Katrín, 34, would like to meet you.'
     )
-    expect(request).toEndWith('reply yes or no. xo, swipeless')
-    // Carriers drop a text with a link in it.
-    expect(request).not.toMatch(/https?:|\.\w{2,3}\//)
+    expect(request).toEndWith(' xo, swipeless')
+    // Carriers drop a text with a scheme in it; a bare link arrives.
+    expect(request).not.toContain('https://')
+    expect(request).not.toContain('http://')
+    expect(request).toMatch(/ swipeless\.me\/a\/[0-9A-Za-z]{14} /)
     expect(request.length).toBeLessThanOrEqual(3 * 67)
 
     // His agent sees the same request she made.
@@ -104,55 +83,67 @@ describe.skipIf(!hasTestDb)('the showcase date request', () => {
       counterpart: { profileId: katrin.profileId, firstName: 'Katrín' },
     })
 
-    // His reply confirms the date. The notifier texts him her number, so
-    // the webhook answers with nothing, and our own number is not texted.
-    const response = await reply('Já!')
-    expect(response.status).toBe(200)
-    expect(await response.text()).toContain('<Response/>')
-    expect(app.texts.map((text) => text.to)).toEqual([PRESENTER, PRESENTER])
-    expect(app.texts[1]?.body).toStartWith(
+    // The link shows her, and the buttons post back to the same address.
+    const code = codeIn(request)
+    const shown = await short(code)
+    const html = await shown.text()
+    expect(shown.status).toBe(200)
+    expect(html).toContain('Katrín, 34')
+    expect(html).toContain('do you want to go out?')
+    expect(html).toContain('you and Katrín both swim in the sea.')
+    expect(html).toContain(`action="/a/${code}"`)
+    expect(html).not.toContain('name="sig"')
+    expect(ok(await magnus.setups()).setups[0]?.status).toBe('requested')
+
+    // His yes makes it a date, and both are texted the other's number.
+    const answered = await (await short(code, 'yes')).text()
+    expect(answered).toContain("it's a date!")
+    expect(answered).toContain(MATCH_PHONE)
+    expect(ok(await magnus.setups()).setups[0]?.status).toBe('confirmed')
+    expect(app.texts.map((text) => text.to).sort()).toEqual(
+      [PRESENTER, PRESENTER, MATCH_PHONE].sort()
+    )
+    const confirmation = app.texts
+      .slice(1)
+      .find((text) => text.to === PRESENTER)?.body
+    expect(confirmation).toStartWith(
       `it's a date. Katrín's number: ${MATCH_PHONE}.`
     )
+    expect(confirmation).not.toContain('swipeless.me')
+
+    // The link now says it is a date, and answers nothing more.
+    expect(await (await short(code)).text()).toContain("it's a date with")
+  })
+
+  test('an unknown or malformed code is a 404', async () => {
+    await prepare()
+    await publish(
+      app.handler,
+      'mcp',
+      man({ firstName: 'Magnús', phone: PRESENTER })
+    )
+    app.travel('30 seconds')
+    await app.settle()
+    expect((await short('AAAAAAAAAAAAAA')).status).toBe(404)
+    expect((await short('nope')).status).toBe(404)
+    expect((await short('AAAAAAAAAAAAAA', 'yes')).status).toBe(404)
+  })
+
+  test('a failed text never stops the yes', async () => {
+    await prepare()
+    app.failTexts()
+    const magnus = await publish(
+      app.handler,
+      'mcp',
+      man({ firstName: 'Magnús', phone: PRESENTER })
+    )
+    app.travel('30 seconds')
+    await app.settle()
+    expect(app.texts).toHaveLength(0)
+    const [setup] = ok(await magnus.setups()).setups
+    expect(setup?.status).toBe('requested')
+    ok(await magnus.confirm(setup?.setupId ?? ''))
     expect(ok(await magnus.setups()).setups[0]?.status).toBe('confirmed')
-
-    // Nothing is left to answer.
-    expect(await (await reply('yes')).text()).toContain('nothing to answer')
-  })
-
-  test('an unsigned or wrongly signed text is refused', async () => {
-    await prepare()
-    const magnus = await publish(
-      app.handler,
-      'mcp',
-      man({ firstName: 'Magnús', phone: PRESENTER })
-    )
-    app.travel('30 seconds')
-    await app.settle()
-
-    expect((await reply('yes', PRESENTER, 'not-the-token')).status).toBe(403)
-    const unsigned = await app.handler(
-      new Request('https://api.swipeless.me/sms/inbound', {
-        method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ From: PRESENTER, Body: 'yes' }),
-      })
-    )
-    expect(unsigned.status).toBe(403)
-    expect(ok(await magnus.setups()).setups[0]?.status).toBe('requested')
-    expect(app.texts).toHaveLength(1)
-  })
-
-  test('anything but yes or no is asked again', async () => {
-    await prepare()
-    const magnus = await publish(
-      app.handler,
-      'mcp',
-      man({ firstName: 'Magnús', phone: PRESENTER })
-    )
-    app.travel('30 seconds')
-    await app.settle()
-    expect(await (await reply('maybe?')).text()).toContain('reply yes or no.')
-    expect(ok(await magnus.setups()).setups[0]?.status).toBe('requested')
   })
 
   test('each rehearsal starts fresh: delete, publish again, asked again', async () => {
@@ -165,7 +156,8 @@ describe.skipIf(!hasTestDb)('the showcase date request', () => {
     app.travel('30 seconds')
     await app.settle()
     // He says no this time, then deletes and publishes again.
-    expect(await (await reply('nei')).text()).toContain('ok, no it is.')
+    const no = await short(codeIn(app.texts[0]?.body ?? ''), 'no')
+    expect(await no.text()).toContain('ok. no it is.')
     expect(ok(await first.setups()).setups[0]?.status).toBe('declined')
     ok(await first.remove())
 

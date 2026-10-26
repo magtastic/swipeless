@@ -67,6 +67,47 @@ export const verifyAnswer = (
   })
 
 /**
+ * The short link a text carries: `swipeless.me/a/<code>`, written without a
+ * scheme, because Icelandic carriers silently drop a text with `https://` in
+ * it (docs/decisions.md, 2026-10-26). swipeless.me proxies `/a/*` to this
+ * API, so the page keeps the short address.
+ *
+ * The code is derived, not stored: the first 14 base62 characters of an HMAC
+ * over the setup and the person, about 83 bits, so it stands in for the
+ * signature exactly as `sig` does. The page finds its setup by deriving the
+ * code for every open pair (`Swipeless.answerablePairs`), few at a time.
+ */
+const WEB_HOST = Config.string('WEB_HOST').pipe(
+  Config.withDefault('swipeless.me')
+)
+
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+const CODE_LENGTH = 14
+
+export const isAnswerCode = (code: string) =>
+  new RegExp(`^[0-9A-Za-z]{${CODE_LENGTH}}$`).test(code)
+
+export const answerCode = (setupId: string, profileId: string) =>
+  Effect.map(secret, (key) =>
+    [
+      ...createHmac('sha256', key)
+        .update(
+          `answer-code:${setupId.toLowerCase()}:${profileId.toLowerCase()}`
+        )
+        .digest()
+        .subarray(0, CODE_LENGTH),
+    ]
+      .map((byte) => BASE62[byte % 62])
+      .join('')
+  )
+
+/** `swipeless.me/a/<code>`, no scheme, for a text. */
+export const shortAnswerLink = (setupId: string, profileId: string) =>
+  Effect.gen(function* () {
+    return `${yield* WEB_HOST}/a/${yield* answerCode(setupId, profileId)}`
+  })
+
+/**
  * The other person's photo for an email, behind the same signature. Stored
  * photos sit behind links that expire in minutes; this one holds as long as
  * the setup is open to this person, and stops when it closes.

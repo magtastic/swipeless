@@ -32,10 +32,9 @@ export const SmsLog = Layer.succeed(
 const SEND_TIMEOUT = '10 seconds'
 
 /**
- * The sender. Production sets the Twilio number, because a date request is
- * answered by replying and nobody can reply to an alphanumeric id like
- * `swipeless` (docs/decisions.md, 2026-10-26). A Messaging Service sid
- * (`MG…`) also works here.
+ * The sender: the alphanumeric id `swipeless`, which nobody can reply to, so
+ * a date request is answered on the small page it links. A Twilio number or
+ * a Messaging Service sid (`MG…`) also works here.
  */
 const SMS_FROM = Config.string('SMS_FROM').pipe(Config.withDefault('swipeless'))
 

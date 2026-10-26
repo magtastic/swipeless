@@ -136,9 +136,14 @@ describe.skipIf(!hasTestDb)('NotifierLive', () => {
     expect(text?.body).toStartWith(
       'hi Name0. Name1, 30, would like to meet you.'
     )
-    expect(text?.body).toContain('you and Name1 both swim in the sea.')
+    // The link leaves no room in three segments for the fit line; the
+    // email and the page carry it.
+    expect(text?.body).not.toContain('swim in the sea')
+    expect(text?.body.length).toBeLessThanOrEqual(3 * 67)
     expect(text?.body).toContain(FAKE_DATE.venue.name)
-    expect(text?.body).toContain('reply yes or no.')
+    expect(text?.body).toMatch(
+      /say yes or no: swipeless\.me\/a\/[0-9A-Za-z]{14} /
+    )
     expect(text?.body).not.toContain('http')
     expect(text?.body).not.toContain('+35482200')
     expect(text?.body).toEndWith('xo, swipeless')

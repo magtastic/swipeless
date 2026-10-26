@@ -13,7 +13,6 @@ import type { Caller } from './caller.ts'
 import { BearerAuthLive, SwipelessGroupLive } from './handlers.ts'
 import { addToolMeta, McpRoutes } from './mcp.ts'
 import type { Swipeless } from './service.ts'
-import { SmsInboundRoutes } from './sms-inbound.ts'
 
 /**
  * Platform services required by addHttpApi. Deliberately runtime-agnostic —
@@ -42,8 +41,7 @@ const ApiRoutes = HttpLayerRouter.addHttpApi(SwipelessApi).pipe(
 export const AllRoutes = Layer.mergeAll(
   ApiRoutes,
   McpRoutes,
-  AnswerRoutes,
-  SmsInboundRoutes
+  AnswerRoutes
 ).pipe(Layer.provide(BearerAuthLive))
 
 /**
