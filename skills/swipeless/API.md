@@ -12,7 +12,7 @@ summary.
 
 | Tool | REST | In | Out |
 |---|---|---|---|
-| `swipeless_publish` | `POST /publish` | core fields + brief, firstName, photoUrl, privateLayer, email?, standingInstructions? (flat object) | `{ profileId, token }` |
+| `swipeless_publish` | `POST /publish` | core fields + brief, firstName, photoUrl (MCP: or photo), privateLayer, email?, standingInstructions? (flat object) | `{ profileId, token }` |
 | `swipeless_candidates` | `GET /candidates?limit=10` | none | `{ candidates: [{ profileId, core, brief, score }] }` up to 10 |
 | `swipeless_interest` | `POST /interest` | `{ profileId }` | `{ setup }` |
 | `swipeless_setups` | `GET /setups` | none | `{ setups: setup[] }` |
@@ -36,6 +36,7 @@ core: {
 brief: markdown string, max 6000 chars
 firstName: string, 1..80 chars    // shown in the note to the one person a date is with
 photoUrl: https URL or data:image/(jpeg|png|webp);base64,...   // required; see Photo files
+photo: { download_url, file_id, mime_type?, file_name? }   // MCP in ChatGPT only, instead of photoUrl
 privateLayer: { phone: "+354..." }   // E.164; released only when both say yes
 standingInstructions: free text, max 1000 chars, e.g. "no weekdays"
 
@@ -113,6 +114,15 @@ An inline photo must be a real JPEG, PNG or WebP of at most 1 MiB whose bytes ma
 the data URI; anything else is refused like any other invalid field (400, or a tool error).
 No public hosting or separate upload endpoint is needed. For now the photo travels with publish;
 a small page texted to the human will replace this.
+
+In ChatGPT, over MCP only, ask the human to drop a photo into the chat. `swipeless_publish`
+lists `photo` in its `_meta["openai/fileParams"]`, so ChatGPT passes the upload as
+`photo: { download_url, file_id, mime_type?, file_name? }` and `photoUrl` can be left out.
+swipeless fetches `download_url` only over HTTPS from ChatGPT's own hosts, keeps it only if it is a
+JPEG, PNG or WebP of at most 4 MiB, and stores it like an inline photo. Anything else is a
+`BadPhoto` tool error whose message says what to ask the human for; that includes ChatGPT on a
+phone sending `"chat_upload"` without the file, where a photo link is the fallback. REST takes
+`photoUrl` only.
 
 Photos are absent from candidate responses. A setup's `counterpart.photoUrl` is a signed URL,
 valid for 10 minutes, present as soon as you can see the setup. Call `swipeless_setups` again to

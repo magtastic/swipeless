@@ -36,6 +36,8 @@ import { Swipeless } from '../../src/service.ts'
  *
  * - OpenAI: embeddings are a hash of the brief, so ranking is reproducible.
  * - Vercel Blob: photos live in a Map. Image validation and link signing run real.
+ * - ChatGPT's file downloads: an upload's bytes come from a Map by URL. The
+ *   host allowlist, size cap and image check run real.
  * - SMS: the notifier records who would have been told what.
  * - The wall clock: frozen at START until a test travels, so expiry, the weekly
  *   cap and the suggested date are exact.
@@ -62,6 +64,8 @@ export type App = {
   readonly now: () => number
   /** Objects in the fake blob store, by key. */
   readonly photos: ReadonlyMap<string, StoredPhoto>
+  /** Files ChatGPT would serve, by download URL. Anything else fails to download. */
+  readonly uploads: Map<string, Uint8Array>
   /** Whether the admin's photo route would accept this link at `at`. */
   readonly photoLinkValid: (
     profileId: string,
@@ -101,8 +105,15 @@ export const openApp = (options: AppOptions = {}): App => {
   const clock = clockReading(() => at)
 
   const photos = new Map<string, StoredPhoto>()
+  const uploads = new Map<string, Uint8Array>()
   const profilePhotos = makeProfilePhotos({
     blobs: memoryBlobStore(photos),
+    download: (url, limit) => {
+      const bytes = uploads.get(url.href)
+      return bytes === undefined
+        ? Effect.fail(new Error(`404 at ${url.href}`))
+        : Effect.succeed(bytes.byteLength > limit ? undefined : bytes)
+    },
     secret: PHOTO_SECRET,
     baseUrl: 'https://photos.example',
   })
@@ -133,7 +144,7 @@ export const openApp = (options: AppOptions = {}): App => {
     Layer.provide(EmbeddingModelDeterministic),
     Layer.provide(DateSuggesterRules),
     Layer.provide(RecordingNotifier),
-    Layer.provide(Photos),
+    Layer.provideMerge(Photos),
     Layer.provideMerge(TestDbLive),
     Layer.provide(config),
     Layer.provide(Layer.setClock(clock)),
@@ -152,6 +163,7 @@ export const openApp = (options: AppOptions = {}): App => {
     },
     now: () => at,
     photos,
+    uploads,
     photoLinkValid: (profileId, link, when) =>
       Effect.runSync(
         profilePhotos
@@ -164,6 +176,7 @@ export const openApp = (options: AppOptions = {}): App => {
     reset: async () => {
       at = START
       photos.clear()
+      uploads.clear()
       notifications.length = 0
       if (!migrated) {
         await runtime.runPromise(migrate)

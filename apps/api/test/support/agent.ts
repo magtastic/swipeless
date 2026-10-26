@@ -220,7 +220,7 @@ export type Agent = {
 export const publish = async (
   handler: WebHandler,
   transport: Transport,
-  args: ReturnType<typeof profile>
+  args: Record<string, unknown>
 ): Promise<Agent> => {
   const session = transport === 'mcp' ? await initialize(handler) : null
 

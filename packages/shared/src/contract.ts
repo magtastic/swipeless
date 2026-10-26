@@ -196,6 +196,49 @@ export const PhotoUrl = Schema.String.pipe(
   Schema.filter(inlinePhotoProblem)
 ).annotations({ identifier: 'PhotoUrl' })
 
+/**
+ * A file ChatGPT hands a tool whose descriptor lists the field in
+ * `_meta["openai/fileParams"]`: the photo a person dropped into the chat.
+ * ChatGPT always sends `download_url` and `file_id`; the other two may be
+ * missing. MCP only, and only ChatGPT sends it (docs/decisions.md, 2026-10-26).
+ */
+export const UploadedFile = Schema.Struct({
+  download_url: Schema.String,
+  file_id: Schema.String,
+  mime_type: Schema.optional(Schema.String),
+  file_name: Schema.optional(Schema.String),
+})
+export type UploadedFile = typeof UploadedFile.Type
+
+/**
+ * The JSON Schema ChatGPT requires of a file parameter: an object declaring
+ * all four properties, requiring exactly `download_url` and `file_id`.
+ */
+const UPLOADED_FILE_JSON_SCHEMA = {
+  type: 'object',
+  description:
+    'The photo the person dropped into this chat. ChatGPT fills this in.',
+  properties: {
+    download_url: { type: 'string' },
+    file_id: { type: 'string' },
+    mime_type: { type: 'string' },
+    file_name: { type: 'string' },
+  },
+  required: ['download_url', 'file_id'],
+} as const
+
+/**
+ * The `photo` argument of swipeless_publish. Advertised as the file object
+ * alone, since ChatGPT rejects any other schema for a file parameter, but a
+ * string is accepted too: ChatGPT on mobile sometimes sends a bare
+ * "chat_upload" instead of the object, and that has to come back as a photo
+ * problem the agent can act on, not a schema error.
+ */
+export const PhotoUpload = Schema.Union(
+  UploadedFile,
+  Schema.String
+).annotations({ jsonSchema: UPLOADED_FILE_JSON_SCHEMA })
+
 /** Withheld until both humans say yes to a date. */
 export class PrivateLayer extends Schema.Class<PrivateLayer>('PrivateLayer')({
   phone: PhoneNumber,
@@ -415,6 +458,16 @@ export class RateLimited extends Schema.TaggedError<RateLimited>()(
   HttpApiSchema.annotations<RateLimited>({ status: 429 })
 ) {}
 
+/**
+ * The photo could not be used: an upload that could not be fetched, was not a
+ * JPEG, PNG or WebP, or was too large. The message says what to ask for.
+ */
+export class BadPhoto extends Schema.TaggedError<BadPhoto>()(
+  'BadPhoto',
+  { message: Schema.String },
+  HttpApiSchema.annotations<BadPhoto>({ status: 400 })
+) {}
+
 /* -------------------------------------------------------------------------- */
 /*  Failure unions, one per operation                                         */
 /* -------------------------------------------------------------------------- */
@@ -433,6 +486,13 @@ export type AuthError = typeof AuthError.Type
  */
 export const PublishError = Schema.Never
 export type PublishError = typeof PublishError.Type
+
+/**
+ * Over MCP, a photo uploaded in ChatGPT is fetched while publishing, and that
+ * fetch can fail in ways the agent can fix by asking for another photo.
+ */
+export const PublishUploadError = BadPhoto
+export type PublishUploadError = BadPhoto
 
 export const CandidatesError = AuthError
 export type CandidatesError = AuthError
