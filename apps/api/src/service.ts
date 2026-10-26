@@ -27,11 +27,13 @@ import {
   cosineDistance,
   eq,
   inArray,
+  isNotNull,
   ne,
   notInArray,
   or,
 } from 'drizzle-orm'
-import { Array as Arr, Clock, Effect } from 'effect'
+import { Array as Arr, Clock, Effect, Schedule } from 'effect'
+import { AfterResponse } from './after-response.ts'
 import { CurrentProfile } from './caller.ts'
 import { SetupLifecycle } from './setups.ts'
 import { generateToken, hashToken } from './token.ts'
@@ -53,6 +55,14 @@ import { generateToken, hashToken } from './token.ts'
  */
 const now = Effect.map(Clock.currentTimeMillis, (millis) => new Date(millis))
 
+/**
+ * What the agent says once publish returns. SHOWCASE: nothing fits on day one,
+ * so it does not look right away. PRODUCT.md, Voice: "go live your life,
+ * we'll text you". Hosts without the skill only ever see this field.
+ */
+export const AFTER_PUBLISH =
+  'Tell your human, in these words or close to them: "done, i published your profile. we\'ll text you when there\'s someone worth meeting. go live your life." Then stop. Do not look for candidates or dates now; swipeless texts them when someone fits. Write swipeless in lowercase, always.'
+
 export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
   dependencies: [SetupLifecycle.Default],
   effect: Effect.gen(function* () {
@@ -60,17 +70,41 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
     const embeddings = yield* EmbeddingModel.EmbeddingModel
     const lifecycle = yield* SetupLifecycle
     const photos = yield* ProfilePhotos
+    const afterResponse = yield* AfterResponse
+
+    /**
+     * Everything publish owes a new profile that the agent need not wait
+     * for. Until the embedding lands the profile is not shown to anyone and
+     * sees nobody; see `candidates`. Later post-publish work hooks in here.
+     */
+    const afterPublish = (profileId: string, brief: string) =>
+      Effect.gen(function* () {
+        const embedding = yield* embeddings.embed(brief)
+        yield* db
+          .update(profiles)
+          .set({ embedding })
+          .where(eq(profiles.id, profileId))
+      }).pipe(
+        Effect.retry(
+          Schedule.exponential('200 millis').pipe(
+            Schedule.compose(Schedule.recurs(3))
+          )
+        ),
+        Effect.tap(() => Effect.logInfo('Embedded a published brief')),
+        Effect.withLogSpan('embed'),
+        Effect.orDie
+      )
 
     return {
       /**
-       * Open signup. Embeds the brief, stores the profile with only the hash
-       * of its token, and records the publication for the admin site.
+       * Open signup. Stores the photo and the profile, with only the hash of
+       * its token, and records the publication for the admin site. The brief
+       * is embedded after the response (`afterPublish`).
        */
       publish: (profile: Profile): Effect.Effect<PublishResponse> =>
         Effect.gen(function* () {
           const at = yield* now
           const token = yield* generateToken()
-          const embedding = yield* embeddings.embed(profile.brief)
 
           const photoReference = yield* photos.store(profile.photoUrl)
           const inserted = yield* db
@@ -85,7 +119,6 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               radiusKm: profile.radiusKm,
               availability: profile.availability,
               brief: profile.brief,
-              embedding,
               firstName: profile.firstName,
               photoUrl: photoReference,
               phone: profile.privateLayer.phone,
@@ -116,13 +149,20 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             createdAt: at,
           })
 
-          return new PublishResponse({ profileId: row.id, token })
-        }).pipe(Effect.orDie),
+          yield* afterResponse.run(afterPublish(row.id, profile.brief))
+          yield* Effect.logInfo('Published a profile')
+
+          return new PublishResponse({
+            profileId: row.id,
+            token,
+            next: AFTER_PUBLISH,
+          })
+        }).pipe(Effect.withLogSpan('publish'), Effect.orDie),
 
       /**
        * The top briefs for a caller, best first.
        *
-       * Hard filters: approved, unexpired profiles, not the caller, mutual
+       * Hard filters: approved, embedded, unexpired profiles, not the caller, mutual
        * gender interest, same country, and nobody the caller already shares a
        * setup with. Ranking is cosine distance over brief embeddings.
        *
@@ -156,14 +196,14 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           const caller = callers[0]
           // The caller's row is gone. Phase 2A's Caller module answers this
           // with Unauthorized before the service is reached; until then an
-          // empty page is the honest answer.
-          if (caller === undefined || caller.reviewStatus !== 'approved') {
+          // empty page is the honest answer. So is a brief not embedded yet,
+          // which publish finishes just after it answers.
+          if (
+            caller === undefined ||
+            caller.reviewStatus !== 'approved' ||
+            caller.embedding === null
+          ) {
             return new CandidatesResponse({ candidates: [] })
-          }
-          if (caller.embedding === null) {
-            return yield* Effect.dieMessage(
-              'profile has no embedding; publish always writes one'
-            )
           }
           if (!Arr.isNonEmptyReadonlyArray(caller.interestedIn)) {
             return yield* Effect.dieMessage(
@@ -213,6 +253,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             .where(
               and(
                 eq(profiles.reviewStatus, 'approved'),
+                isNotNull(profiles.embedding),
                 isLiveSql(at.getTime()),
                 ne(profiles.id, current.profileId),
                 eq(profiles.country, caller.country),

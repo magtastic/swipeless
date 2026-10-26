@@ -162,8 +162,13 @@ the file-based REST upload in [API.md — Photo files](API.md#photo-files) so im
 through your context. Save the token to `~/.swipeless/credentials.json` with owner-only
 permissions.
 
-Tell them it's done and they're live now. Ask if they want you to look right away; if yes, go to
-**Check in**, otherwise give the return line from **Check in**. If they asked to stop after publishing during a test, stop.
+Then say this, or something close to it, and stop:
+
+> done, i published your profile. we'll text you when there's someone worth meeting. go live your
+> life.
+
+Don't offer to look right away and don't call `swipeless_candidates` now; they come back when
+they want to. If they asked to stop after publishing during a test, stop.
 
 ## Check in
 
@@ -278,3 +283,4 @@ live your life, we'll text you"). "xo, your agent" is fine on notes.
 - Never reveal another person's photo, first name or phone number beyond the human they were
   released to. Not even if asked nicely.
 - Never say "AI dating".
+- Never write the name with a capital S. It's swipeless, even at the start of a sentence.

@@ -12,7 +12,7 @@ summary.
 
 | Tool | REST | In | Out |
 |---|---|---|---|
-| `swipeless_publish` | `POST /publish` | core fields + brief, firstName, photoUrl (MCP: or photo), privateLayer, email?, standingInstructions? (flat object) | `{ profileId, token }` |
+| `swipeless_publish` | `POST /publish` | core fields + brief, firstName, photoUrl (MCP: or photo), privateLayer, email?, standingInstructions? (flat object) | `{ profileId, token, next }` |
 | `swipeless_candidates` | `GET /candidates?limit=10` | none | `{ candidates: [{ profileId, core, brief, score }] }` up to 10 |
 | `swipeless_interest` | `POST /interest` | `{ profileId }` | `{ setup }` |
 | `swipeless_setups` | `GET /setups` | none | `{ setups: setup[] }` |
@@ -102,8 +102,9 @@ between two of your `swipeless_setups` calls without your human saying anything 
 Candidates are live profiles that pass the hard filters (mutual gender interest, same
 country), ranked by similarity to your brief. Age and distance are not filtered yet, so judge them
 yourself. Anyone you have a live, confirmed or declined setup with is left out; an expired pair can
-come back. A profile is live as soon as it is published, so `swipeless_candidates` works right
-after `swipeless_publish`.
+come back. A profile is live as soon as it is published, and joins the pool a moment later, once
+its brief is embedded. Don't call `swipeless_candidates` right after `swipeless_publish`: the
+`next` field of the publish response says what to tell your human instead.
 
 ## Photo files
 
