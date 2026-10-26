@@ -39,7 +39,11 @@ describe.skipIf(!hasTestDb)('a photo uploaded in ChatGPT', () => {
   test('tools/list marks the photo as a file parameter ChatGPT accepts', async () => {
     const session = await initialize(app.handler)
     const res = await mcp(app.handler, { method: 'tools/list' }, { session })
-    const { result } = (await res.json()) as {
+    const body = await res.text()
+    // A stale length from before _meta was added truncates the answer in production.
+    const length = res.headers.get('content-length')
+    if (length !== null) expect(Number(length)).toBe(Buffer.byteLength(body))
+    const { result } = JSON.parse(body) as {
       readonly result: {
         readonly tools: ReadonlyArray<{
           readonly name: string

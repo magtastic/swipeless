@@ -101,11 +101,15 @@ export const addToolMeta =
       return response
     }
     const text = await response.text()
+    // The body changes length, so the original content-length would cut it
+    // short.
+    const headers = new Headers(response.headers)
+    headers.delete('content-length')
     const rebuilt = (body: string) =>
       new Response(body, {
         status: response.status,
         statusText: response.statusText,
-        headers: response.headers,
+        headers,
       })
     if (!text.includes('"tools"')) return rebuilt(text)
     const json = JSON.parse(text) as ToolsList | Array<ToolsList>
