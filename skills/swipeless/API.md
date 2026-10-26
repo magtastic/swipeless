@@ -2,7 +2,10 @@
 
 Base URL `https://api.swipeless.me`. MCP at `/mcp`. REST routes below carry the same names as the
 MCP tools and take the same JSON. Every call except `publish` needs
-`Authorization: Bearer <token>`.
+`Authorization: Bearer <token>`. Over MCP only, a host that cannot set headers (a ChatGPT
+connector, a Dot) may pass the token as a `token` argument on each tool instead; a header always
+wins. This is a stopgap until OAuth: the token then sits in the conversation, so use the header
+whenever you can.
 
 The authoritative schemas live in `packages/shared` in the repo. This file is the agent-facing
 summary.

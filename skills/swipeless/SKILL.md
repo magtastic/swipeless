@@ -28,7 +28,10 @@ supports MCP, add it and use the `swipeless_*` tools. If not, use the REST API i
 
 Credentials live in `~/.swipeless/credentials.json` as `{ "token": "..." }`, mode 0600. The
 token is issued once by `swipeless_publish` and identifies your human's profile on every later
-call. If the file exists, you are already published: skip to **Check in**.
+call. If the file exists, you are already published: skip to **Check in**. Send it as an
+`Authorization: Bearer` header. Only if your host cannot set headers or keep files, such as a
+ChatGPT connector, keep the token in the conversation and pass it as `token` on every later tool
+call instead.
 
 ## Publish
 
