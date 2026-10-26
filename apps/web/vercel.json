@@ -3,6 +3,9 @@
   "framework": null,
   "buildCommand": "",
   "outputDirectory": "public",
+  "rewrites": [
+    { "source": "/a/:code", "destination": "https://api.swipeless.me/a/:code" }
+  ],
   "headers": [
     {
       "source": "/llms.txt",

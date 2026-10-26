@@ -17,9 +17,9 @@ import {
   type InterestResponse,
   type NotFound,
   type Profile,
-  type ProfileId,
   PublishResponse,
   type RateLimited,
+  type Setup,
   type SetupsResponse,
 } from '@swipeless/shared'
 import {
@@ -32,11 +32,11 @@ import {
   ne,
   notInArray,
   or,
-  sql,
 } from 'drizzle-orm'
 import { Array as Arr, Clock, Effect, Option, Schedule } from 'effect'
 import { AfterResponse } from './after-response.ts'
 import { CurrentProfile } from './caller.ts'
+import { FitWriter } from './fit-writer.ts'
 import { SetupLifecycle } from './setups.ts'
 import { Showcase, showcaseMatchId } from './showcase.ts'
 import { generateToken, hashToken } from './token.ts'
@@ -74,6 +74,9 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
     const lifecycle = yield* SetupLifecycle
     const photos = yield* ProfilePhotos
     const afterResponse = yield* AfterResponse
+    const fitWriter = yield* FitWriter
+    /** One line per person and setup, kept while this instance lives. */
+    const fits = new Map<string, string | undefined>()
 
     /**
      * Everything publish owes a new profile that the agent need not wait
@@ -361,23 +364,61 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
         Effect.flatMap(CurrentProfile, (current) => lifecycle.listFor(current)),
 
       /**
-       * Who texts from this number, newest first, for answering a date
-       * request by reply. Digits only, so `+354 847 0454` is `+3548470454`.
+       * Why the caller and the other person in this setup might click, for
+       * the small page. Written once per instance and kept; given up after
+       * a few seconds so the page never waits long for it.
        */
-      profilesWithPhone: (
-        phone: string
-      ): Effect.Effect<ReadonlyArray<ProfileId>> =>
+      whyYouFit: (
+        setup: Setup
+      ): Effect.Effect<string | undefined, never, CurrentProfile> =>
         Effect.gen(function* () {
-          const digits = phone.replace(/\D/g, '')
-          if (digits === '') return []
-          const rows = yield* db
-            .select({ id: profiles.id })
+          const current = yield* CurrentProfile
+          const key = `${setup.setupId}:${current.profileId}`
+          if (fits.has(key)) return fits.get(key)
+          const [self] = yield* db
+            .select({ firstName: profiles.firstName, brief: profiles.brief })
             .from(profiles)
-            .where(
-              sql`regexp_replace(${profiles.phone}, '[^0-9]', '', 'g') = ${digits}`
+            .where(eq(profiles.id, current.profileId))
+          if (self === undefined) return undefined
+          const fit = yield* fitWriter
+            .whyYouFit({
+              forFirstName: self.firstName,
+              forBrief: self.brief,
+              otherFirstName: setup.counterpart.firstName,
+              otherBrief: setup.counterpart.brief,
+            })
+            .pipe(
+              Effect.timeout('8 seconds'),
+              Effect.orElseSucceed(() => undefined)
             )
-            .orderBy(sql`${profiles.createdAt} desc`)
-          return rows.map((row) => row.id as ProfileId)
+          if (fit !== undefined) fits.set(key, fit)
+          return fit
+        }).pipe(Effect.orDie),
+
+      /**
+       * Every setup a short answer link can still open, with both people,
+       * for the page to find a link's setup by its derived code. Only the
+       * ones waiting on a yes or already a date: a handful at a time.
+       */
+      answerablePairs: (): Effect.Effect<
+        ReadonlyArray<{
+          readonly setupId: string
+          readonly profileIds: readonly [string, string]
+        }>
+      > =>
+        Effect.gen(function* () {
+          const rows = yield* db
+            .select({
+              id: setups.id,
+              a: setups.profileAId,
+              b: setups.profileBId,
+            })
+            .from(setups)
+            .where(inArray(setups.status, ['requested', 'confirmed']))
+          return rows.map((row) => ({
+            setupId: row.id,
+            profileIds: [row.a, row.b] as const,
+          }))
         }).pipe(Effect.orDie),
     }
   }),

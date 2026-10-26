@@ -9,7 +9,7 @@ import {
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
-import { answerPhotoUrl, answerUrl } from './answer-links.ts'
+import { answerPhotoUrl, answerUrl, shortAnswerLink } from './answer-links.ts'
 import { FitWriter } from './fit-writer.ts'
 import { isOwnNumber, Sms } from './sms.ts'
 
@@ -43,10 +43,10 @@ export class Notifier extends Context.Tag('Notifier')<
 >() {}
 
 /**
- * The texts, in the Voice of PRODUCT.md: a short letter from a friend. They
- * carry no link: Icelandic carriers silently drop a text with one in it, so
- * the date request is answered by replying yes or no (docs/decisions.md,
- * 2026-10-26). The email keeps its links.
+ * The texts, in the Voice of PRODUCT.md: a short letter from a friend. The
+ * date request links the small page as `swipeless.me/a/<code>`, never with a
+ * scheme: Icelandic carriers silently drop a text with `https://` in it
+ * (docs/decisions.md, 2026-10-26). The email keeps its full links.
  *
  * Short on purpose. Icelandic letters make a text UCS-2, 67 characters a
  * segment once it splits, so the request aims at three segments and drops
@@ -87,14 +87,18 @@ export const dateRequestedText = (
   firstName: string,
   other: { readonly firstName: string; readonly age: number },
   date: DatePlace,
-  fit: string | undefined
+  fit: string | undefined,
+  link: string | undefined
 ): string => {
   const text = (fitLine: string | undefined) =>
     [
       `hi ${firstName}. ${other.firstName}, ${other.age}, would like to meet you.`,
       ...(fitLine ? [clause(fitLine)] : []),
-      place(date),
-      `reply yes or no. ${SIGN_OFF}`,
+      `${shortWhen(date.time)} at ${date.venue.name}.`,
+      link
+        ? `have a look and say yes or no: ${link}`
+        : 'tell your agent yes or no.',
+      SIGN_OFF,
     ].join(' ')
   const full = text(fit)
   return full.length <= THREE_SEGMENTS ? full : text(undefined)
@@ -106,9 +110,6 @@ export const dateConfirmedText = (
   date: DatePlace
 ): string =>
   `it's a date. ${otherFirstName}'s number: ${otherPhone}. ${place(date)} have fun. ${SIGN_OFF}`
-
-/** The reply to a no by text. Nobody else is told anything. */
-export const declinedText = `ok, no it is. nobody is told why. ${SIGN_OFF}`
 
 /**
  * Texts every person at the phone number they gave, and emails the ones who
@@ -223,9 +224,12 @@ export const NotifierLive = Layer.effect(
         const { date, self, other } = found
         if (kind === 'date requested') {
           const extras = yield* requestExtras(setupId, profileId, self, other)
+          const link = yield* shortAnswerLink(setupId, profileId).pipe(
+            Effect.orElseSucceed(() => undefined)
+          )
           yield* text(
             self.phone,
-            dateRequestedText(self.firstName, other, date, extras.fit)
+            dateRequestedText(self.firstName, other, date, extras.fit, link)
           )
           if (self.email) {
             yield* mailer.send(

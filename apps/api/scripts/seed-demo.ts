@@ -14,6 +14,7 @@ import {
   EmbeddingModelDeterministic,
   EmbeddingModelOpenAi,
 } from '../src/embeddings.ts'
+import { FitWriterNone } from '../src/fit-writer.ts'
 import { NotifierLog } from '../src/notifier.ts'
 import { Swipeless } from '../src/service.ts'
 import { guardDatabaseTarget } from './local-only.ts'
@@ -226,6 +227,7 @@ const App = Swipeless.Default.pipe(
   Layer.provide(AfterResponseInline),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierLog),
+  Layer.provide(FitWriterNone),
   Layer.provideMerge(DbLive)
 )
 

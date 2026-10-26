@@ -27,7 +27,7 @@ import { AfterResponse, makeAfterResponse } from '../../src/after-response.ts'
 import { Caller } from '../../src/caller.ts'
 import { DateSuggesterRules } from '../../src/date-suggester.ts'
 import { EmbeddingModelDeterministic } from '../../src/embeddings.ts'
-import { FitWriterNone } from '../../src/fit-writer.ts'
+import { FitWriter, FitWriterNone } from '../../src/fit-writer.ts'
 import { makeWebHandler } from '../../src/http.ts'
 import { Notifier, NotifierLive } from '../../src/notifier.ts'
 import { Swipeless } from '../../src/service.ts'
@@ -89,6 +89,8 @@ export type App = {
   readonly notifications: ReadonlyArray<Notification>
   /** Every text that would have gone through Twilio, oldest first. */
   readonly texts: ReadonlyArray<Text>
+  /** Every text from now on fails the way Twilio refuses one. */
+  readonly failTexts: () => void
   /** Sets config the app reads per call. Unset again on reset. */
   readonly env: { readonly set: (name: string, value: string) => void }
   /** Waits for the work responses left running, except what is asleep. */
@@ -176,9 +178,15 @@ export const openApp = (options: AppOptions = {}): App => {
   const Photos = Layer.succeed(ProfilePhotos, profilePhotos)
 
   const texts: Array<Text> = []
+  let textsFail = false
   const RecordingSms = Layer.succeed(
     Sms,
-    Sms.of({ send: (text) => Effect.sync(() => void texts.push(text)) })
+    Sms.of({
+      send: (text) =>
+        textsFail
+          ? Effect.die(new Error('Twilio answered 400 (21612)'))
+          : Effect.sync(() => void texts.push(text)),
+    })
   )
   const mailer = recordingMailer()
 
@@ -239,7 +247,17 @@ export const openApp = (options: AppOptions = {}): App => {
     }
   }
 
+  // The model behind the page's "why you might click", answering at once.
+  const PageFitWriter = Layer.succeed(
+    FitWriter,
+    FitWriter.of({
+      whyYouFit: ({ otherFirstName }) =>
+        Effect.succeed(`you and ${otherFirstName} both swim in the sea.`),
+    })
+  )
+
   const AppLayer = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
+    Layer.provide(PageFitWriter),
     Layer.provide(EmbeddingModelDeterministic),
     Layer.provide(AfterResponseTracked),
     Layer.provide(DateSuggesterRules),
@@ -274,6 +292,9 @@ export const openApp = (options: AppOptions = {}): App => {
       ),
     notifications,
     texts,
+    failTexts: () => {
+      textsFail = true
+    },
     env,
     settle,
     query: (f) =>
@@ -285,6 +306,7 @@ export const openApp = (options: AppOptions = {}): App => {
       uploads.clear()
       notifications.length = 0
       texts.length = 0
+      textsFail = false
       mailer.sent.length = 0
       for (const name of setNames) delete process.env[name]
       setNames.clear()
