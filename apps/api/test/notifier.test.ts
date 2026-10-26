@@ -18,11 +18,13 @@ import { recordingMailer } from '@swipeless/email/testing'
 import type { ProfileId, SetupId } from '@swipeless/shared'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FitWriter } from '../src/fit-writer.ts'
-import { Notifier, NotifierEmail } from '../src/notifier.ts'
+import { Notifier, NotifierLive } from '../src/notifier.ts'
+import { Sms, type Text } from '../src/sms.ts'
 
 /**
- * The email notifier against a real Postgres, with only the mailer faked: it
- * reads the setup and both people itself, so the reads are what is tested.
+ * The notifier against a real Postgres, with only Twilio, Resend and the model
+ * substituted: it reads the setup and both people itself, so the reads are
+ * what is tested.
  */
 
 const FAKE_DATE = {
@@ -30,10 +32,20 @@ const FAKE_DATE = {
   time: '2099-09-17T19:30:00.000Z',
 }
 
+process.env.API_BASE_URL = 'http://answer.test'
+process.env.BLOB_READ_WRITE_TOKEN ??= 'test-signing-key'
+
 const mailer = recordingMailer()
+const texts: Array<Text> = []
 const runtime = ManagedRuntime.make(
-  NotifierEmail.pipe(
+  NotifierLive.pipe(
     Layer.provide(mailer.layer),
+    Layer.provide(
+      Layer.succeed(
+        Sms,
+        Sms.of({ send: (text) => Effect.sync(() => void texts.push(text)) })
+      )
+    ),
     Layer.provide(
       Layer.succeed(
         FitWriter,
@@ -92,10 +104,11 @@ const seed = Effect.gen(function* () {
   }
 })
 
-describe.skipIf(!hasTestDb)('NotifierEmail', () => {
+describe.skipIf(!hasTestDb)('NotifierLive', () => {
   beforeAll(() => runtime.runPromise(migrate))
   beforeEach(async () => {
     mailer.sent.length = 0
+    texts.length = 0
     await runtime.runPromise(truncateAll)
   })
   afterAll(() => runtime.dispose())
@@ -116,6 +129,19 @@ describe.skipIf(!hasTestDb)('NotifierEmail', () => {
     expect(email?.text).toContain(FAKE_DATE.venue.name)
     expect(email?.text).not.toContain('+35482200')
     expect(email?.text).toContain('you and Name1 both swim in the sea.')
+
+    expect(texts).toHaveLength(1)
+    const [text] = texts
+    expect(text?.to).toBe('+354822000')
+    expect(text?.body).toStartWith(
+      'hi Name0, Name1, 30, would like to meet you.'
+    )
+    expect(text?.body).toContain('you and Name1 both swim in the sea.')
+    expect(text?.body).toContain(FAKE_DATE.venue.name)
+    expect(text?.body).toContain('yes or no? http://answer.test/answer?')
+    expect(text?.body).not.toContain('choice=')
+    expect(text?.body).not.toContain('+35482200')
+    expect(text?.body).toEndWith('xo, swipeless')
   })
 
   test('the confirmation carries the other phone number', async () => {
@@ -127,9 +153,23 @@ describe.skipIf(!hasTestDb)('NotifierEmail', () => {
       })
     )
     expect(mailer.sent[0]?.text).toContain("Name1's number: +354822001")
+    expect(texts[0]?.body).toContain("Name1's number: +354822001")
   })
 
-  test('someone without an email, or a missing setup, gets nothing', async () => {
+  test('someone without an email is texted only', async () => {
+    await runtime.runPromise(
+      Effect.gen(function* () {
+        const { setupId, without } = yield* seed
+        const notifier = yield* Notifier
+        yield* notifier.dateConfirmed(without, setupId)
+      })
+    )
+    expect(mailer.sent).toEqual([])
+    expect(texts.map((text) => text.to)).toEqual(['+354822001'])
+    expect(texts[0]?.body).toContain("Name0's number: +354822000")
+  })
+
+  test('a missing setup tells nobody anything', async () => {
     await runtime.runPromise(
       Effect.gen(function* () {
         const { without, withEmail } = yield* seed
@@ -140,5 +180,6 @@ describe.skipIf(!hasTestDb)('NotifierEmail', () => {
       })
     )
     expect(mailer.sent).toEqual([])
+    expect(texts).toEqual([])
   })
 })

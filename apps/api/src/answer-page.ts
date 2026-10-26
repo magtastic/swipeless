@@ -127,7 +127,7 @@ const show = (swipeless: Service) =>
         {
           hand: `it's a date with ${escapeHtml(setup.counterpart.firstName)}.`,
         },
-        { print: 'we emailed you both the details.' },
+        { print: 'we texted you both the details.' },
       ])
     }
     if (setup.status !== 'requested' || setup.youConfirmed) return yield* closed
@@ -170,7 +170,7 @@ const answer = (swipeless: Service) =>
       ...(phone
         ? [{ hand: `${name}'s number: ${highlight(escapeHtml(phone))}` }]
         : []),
-      { print: 'we emailed you both the details. text them, say hi.' },
+      { print: 'we texted you both the details. text them, say hi.' },
       { blank: true },
       { hand: 'xo, swipeless' },
     ])

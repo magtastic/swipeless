@@ -5,8 +5,9 @@ import type { ProfileId, SetupStatus } from '@swipeless/shared'
 import { Cause, Effect, Layer } from 'effect'
 import { DateSuggesterRules } from './date-suggester.ts'
 import { FitWriterClaude } from './fit-writer.ts'
-import { NotifierEmail } from './notifier.ts'
+import { NotifierLive } from './notifier.ts'
 import { SetupLifecycle } from './setups.ts'
+import { SmsLive } from './sms.ts'
 
 /**
  * A local test tool for the admin site: one person's agent picks another and
@@ -35,9 +36,10 @@ const pickAndSayYes = (actorId: ProfileId, targetId: ProfileId) =>
 const ActAsLive = SetupLifecycle.Default.pipe(
   Layer.provide(ProfilePhotosLive),
   Layer.provide(DateSuggesterRules),
-  Layer.provide(NotifierEmail),
+  Layer.provide(NotifierLive),
   Layer.provide(FitWriterClaude),
   Layer.provide(MailerLive),
+  Layer.provide(SmsLive),
   Layer.provide(DbLive)
 )
 

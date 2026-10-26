@@ -135,6 +135,28 @@ the button next to a confirmed date. Set on the API and admin Vercel projects:
 The date request's yes and no boxes link `/answer` on the API, a small page signed for that one
 person and setup with the Blob token, the key photo links already use.
 
+## SMS
+
+The API texts the date request (with one link to the yes-or-no page) and the confirmation with
+the other person's number, to the phone every profile gives, through Twilio. Set on the API and
+admin Vercel projects (the admin's showcase button sends the same text):
+
+| Variable | Meaning |
+|---|---|
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | Twilio credentials. Without them every text is only logged |
+| `SMS_FROM` | Sender: `swipeless` (alphanumeric, the default), a Twilio number, or a Messaging Service sid `MG…` |
+
+## Showcase (2026-10-27 only)
+
+A staged date request for the live demo; see docs/decisions.md, 2026-10-26. Off unless both
+`SHOWCASE_PHONE` and `SHOWCASE_MATCH_PROFILE_ID` are set on the API (and the admin, for the
+fallback button). `SHOWCASE_DELAY_SECONDS` defaults to 30. Publish the prepared match from
+`showcase/match-profile.json` with:
+
+```sh
+bun apps/api/scripts/showcase-publish.ts showcase/match-profile.json --target https://api.swipeless.me
+```
+
 ## Private photos
 
 Uploaded photos live in the private Vercel Blob store `swipeless-photos`. The database's
