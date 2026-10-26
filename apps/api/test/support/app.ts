@@ -5,12 +5,14 @@ import {
   TestDbLive,
   truncateAll,
 } from '@swipeless/db/testing'
+import { recordingMailer } from '@swipeless/email/testing'
 import {
   makeProfilePhotos,
   memoryBlobStore,
   ProfilePhotos,
   type StoredPhoto,
 } from '@swipeless/photos'
+import type { ProfileId, SetupId } from '@swipeless/shared'
 import {
   Clock,
   ConfigProvider,
@@ -25,9 +27,11 @@ import { AfterResponse, makeAfterResponse } from '../../src/after-response.ts'
 import { Caller } from '../../src/caller.ts'
 import { DateSuggesterRules } from '../../src/date-suggester.ts'
 import { EmbeddingModelDeterministic } from '../../src/embeddings.ts'
+import { FitWriterNone } from '../../src/fit-writer.ts'
 import { makeWebHandler } from '../../src/http.ts'
-import { Notifier } from '../../src/notifier.ts'
+import { Notifier, NotifierLive } from '../../src/notifier.ts'
 import { Swipeless } from '../../src/service.ts'
+import { Sms, type Text } from '../../src/sms.ts'
 
 /**
  * The whole API as production wires it — the web handler the Vercel Function
@@ -39,13 +43,17 @@ import { Swipeless } from '../../src/service.ts'
  * - Vercel Blob: photos live in a Map. Image validation and link signing run real.
  * - ChatGPT's file downloads: an upload's bytes come from a Map by URL. The
  *   host allowlist, size cap and image check run real.
- * - SMS: the notifier records who would have been told what.
+ * - Twilio and Resend: texts and emails are kept, not sent. The notifier
+ *   that writes them is the real one; it also records who was told what.
+ * - Anthropic: no "why you might click" line.
  * - The wall clock: frozen at START until a test travels, so expiry, the weekly
- *   cap and the suggested date are exact.
+ *   cap and the suggested date are exact. A sleep ends when travel passes it.
  *
  * Work a request leaves running after its response, as Vercel's `waitUntil`
  * does, is finished before the handler's promise resolves, so a test sees the
- * world as it is once that work is done.
+ * world as it is once that work is done. Work asleep until a later time is
+ * the exception: it goes on once the test travels there, and `settle` waits
+ * for it.
  */
 
 export { hasTestDb }
@@ -79,6 +87,12 @@ export type App = {
   ) => boolean
   /** Every message the service asked to send, oldest first. */
   readonly notifications: ReadonlyArray<Notification>
+  /** Every text that would have gone through Twilio, oldest first. */
+  readonly texts: ReadonlyArray<Text>
+  /** Sets config the app reads per call. Unset again on reset. */
+  readonly env: { readonly set: (name: string, value: string) => void }
+  /** Waits for the work responses left running, except what is asleep. */
+  readonly settle: () => Promise<void>
   /** Reads straight from the database, for what no endpoint shows. */
   readonly query: <A>(
     f: (db: PgDrizzle.PgDrizzle['Type']) => Effect.Effect<A, unknown>
@@ -105,9 +119,46 @@ const clockReading = (read: () => number): Clock.Clock => {
   }
 }
 
-export const openApp = (options: AppOptions = {}): App => {
+/**
+ * The app's clock: the time is `at`, and a sleep wakes when `travel` moves
+ * `at` past its end rather than after real time passes.
+ */
+const travellingClock = () => {
   let at = START
-  const clock = clockReading(() => at)
+  const sleepers = new Set<{ until: number; wake: () => void }>()
+  const clock: Clock.Clock = {
+    ...clockReading(() => at),
+    sleep: (duration) =>
+      Effect.async<void>((resume) => {
+        const sleeper = {
+          until: at + Duration.toMillis(duration),
+          wake: () => resume(Effect.void),
+        }
+        if (sleeper.until <= at) return sleeper.wake()
+        sleepers.add(sleeper)
+        return Effect.sync(() => void sleepers.delete(sleeper))
+      }),
+  }
+  const moveTo = (to: number) => {
+    at = to
+    for (const sleeper of sleepers) {
+      if (sleeper.until <= at) {
+        sleepers.delete(sleeper)
+        sleeper.wake()
+      }
+    }
+  }
+  /** Back to START, and any sleep still waiting never wakes. */
+  const restart = () => {
+    sleepers.clear()
+    at = START
+  }
+  return { clock, now: () => at, moveTo, restart, asleep: () => sleepers.size }
+}
+
+export const openApp = (options: AppOptions = {}): App => {
+  const time = travellingClock()
+  const clock = time.clock
 
   const photos = new Map<string, StoredPhoto>()
   const uploads = new Map<string, Uint8Array>()
@@ -124,16 +175,34 @@ export const openApp = (options: AppOptions = {}): App => {
   })
   const Photos = Layer.succeed(ProfilePhotos, profilePhotos)
 
+  const texts: Array<Text> = []
+  const RecordingSms = Layer.succeed(
+    Sms,
+    Sms.of({ send: (text) => Effect.sync(() => void texts.push(text)) })
+  )
+  const mailer = recordingMailer()
+
+  // The real notifier, with a note of each call on the way through.
   const notifications: Array<Notification> = []
-  const record =
-    (kind: Notification['kind']) => (profileId: string, setupId: string) =>
-      Effect.sync(() => void notifications.push({ kind, profileId, setupId }))
-  const RecordingNotifier = Layer.succeed(
+  const RecordingNotifier = Layer.effect(
     Notifier,
-    Notifier.of({
-      dateRequested: record('dateRequested'),
-      dateConfirmed: record('dateConfirmed'),
+    Effect.map(Notifier, (live) => {
+      const record =
+        (kind: Notification['kind']) =>
+        (profileId: ProfileId, setupId: SetupId) =>
+          Effect.sync(
+            () => void notifications.push({ kind, profileId, setupId })
+          ).pipe(Effect.zipRight(live[kind](profileId, setupId)))
+      return Notifier.of({
+        dateRequested: record('dateRequested'),
+        dateConfirmed: record('dateConfirmed'),
+      })
     })
+  ).pipe(
+    Layer.provide(NotifierLive),
+    Layer.provide(FitWriterNone),
+    Layer.provide(mailer.layer),
+    Layer.provide(RecordingSms)
   )
 
   const config =
@@ -145,6 +214,16 @@ export const openApp = (options: AppOptions = {}): App => {
           ).pipe(ConfigProvider.orElse(() => ConfigProvider.fromEnv()))
         )
 
+  // Config the app reads per call comes from the environment; the names a
+  // test sets are unset again on reset.
+  const setNames = new Set<string>()
+  const env = {
+    set: (name: string, value: string) => {
+      setNames.add(name)
+      process.env[name] = value
+    },
+  }
+
   const pending = new Set<Promise<void>>()
   const AfterResponseTracked = Layer.succeed(
     AfterResponse,
@@ -153,8 +232,11 @@ export const openApp = (options: AppOptions = {}): App => {
       void promise.finally(() => pending.delete(promise))
     })
   )
+  // Done when nothing runs but the work asleep until the test travels.
   const settle = async () => {
-    while (pending.size > 0) await Promise.all(pending)
+    while (pending.size > time.asleep()) {
+      await Promise.race([...pending, new Promise((r) => setTimeout(r, 1))])
+    }
   }
 
   const AppLayer = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
@@ -180,10 +262,8 @@ export const openApp = (options: AppOptions = {}): App => {
       await settle()
       return response
     },
-    travel: (duration) => {
-      at += Duration.toMillis(duration)
-    },
-    now: () => at,
+    travel: (duration) => time.moveTo(time.now() + Duration.toMillis(duration)),
+    now: time.now,
     photos,
     uploads,
     photoLinkValid: (profileId, link, when) =>
@@ -193,13 +273,21 @@ export const openApp = (options: AppOptions = {}): App => {
           .pipe(Effect.withClock(clockReading(() => when)))
       ),
     notifications,
+    texts,
+    env,
+    settle,
     query: (f) =>
       runtime.runPromise(Effect.flatMap(PgDrizzle.PgDrizzle, (db) => f(db))),
     reset: async () => {
-      at = START
+      pending.clear()
+      time.restart()
       photos.clear()
       uploads.clear()
       notifications.length = 0
+      texts.length = 0
+      mailer.sent.length = 0
+      for (const name of setNames) delete process.env[name]
+      setNames.clear()
       if (!migrated) {
         await runtime.runPromise(migrate)
         migrated = true
@@ -207,6 +295,7 @@ export const openApp = (options: AppOptions = {}): App => {
       await runtime.runPromise(truncateAll)
     },
     dispose: async () => {
+      for (const name of setNames) delete process.env[name]
       await web.dispose()
       await runtime.dispose()
     },

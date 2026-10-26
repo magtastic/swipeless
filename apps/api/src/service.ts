@@ -32,10 +32,11 @@ import {
   notInArray,
   or,
 } from 'drizzle-orm'
-import { Array as Arr, Clock, Effect, Schedule } from 'effect'
+import { Array as Arr, Clock, Effect, Option, Schedule } from 'effect'
 import { AfterResponse } from './after-response.ts'
 import { CurrentProfile } from './caller.ts'
 import { SetupLifecycle } from './setups.ts'
+import { Showcase, showcaseMatchId } from './showcase.ts'
 import { generateToken, hashToken } from './token.ts'
 
 /**
@@ -64,7 +65,7 @@ export const AFTER_PUBLISH =
   'Tell your human, in these words or close to them: "done, i published your profile. we\'ll text you when there\'s someone worth meeting. go live your life." Then stop. Do not look for candidates or dates now; swipeless texts them when someone fits. Write swipeless in lowercase, always.'
 
 export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
-  dependencies: [SetupLifecycle.Default],
+  dependencies: [SetupLifecycle.Default, Showcase.Default],
   effect: Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle
     const embeddings = yield* EmbeddingModel.EmbeddingModel
@@ -94,6 +95,7 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
         Effect.withLogSpan('embed'),
         Effect.orDie
       )
+    const showcase = yield* Showcase
 
     return {
       /**
@@ -150,6 +152,8 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           })
 
           yield* afterResponse.run(afterPublish(row.id, profile.brief))
+          // Showcase only: a staged date request for the presenter's phone.
+          yield* showcase.published(row.id, profile.privateLayer.phone)
           yield* Effect.logInfo('Published a profile')
 
           return new PublishResponse({
@@ -234,6 +238,10 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
           const excluded = paired
             .filter((pair) => effectiveStatus(pair, at.getTime()) !== 'expired')
             .map((pair) => (pair.a === current.profileId ? pair.b : pair.a))
+
+          // Showcase only: the staged match is never anyone's candidate.
+          const hidden = Option.toArray(yield* showcaseMatchId)
+          excluded.push(...hidden)
 
           const distance = cosineDistance(profiles.embedding, caller.embedding)
 
