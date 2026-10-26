@@ -376,6 +376,8 @@ export class PublishResponse extends Schema.Class<PublishResponse>(
    * every later call and is the only way to delete the profile.
    */
   token: Schema.String.pipe(Schema.minLength(1)),
+  /** What the agent tells its human now, and that it does nothing else yet. */
+  next: Schema.String,
 }) {}
 
 export class CandidatesResponse extends Schema.Class<CandidatesResponse>(
