@@ -220,3 +220,14 @@ bend it, noted below.
 - Code defaults, the skill, llms.txt and the site's canonical links all name the new hosts. The
   `swipeless-*.vercel.app` addresses keep working, so installed skills and links in emails
   already sent don't break.
+
+## 2026-10-26: The token as an MCP parameter, for the AI Makers demo
+
+- Every authenticated MCP tool takes an optional `token` argument. An `Authorization` header
+  still wins; the argument is used only when there is no header. REST is unchanged.
+- It exists so the AI Makers Iceland demo on 2026-10-27 can run in ChatGPT custom connectors and
+  OpenAI Dots, which support only no auth or OAuth and cannot send a static header.
+- It is weaker than the header: the token sits in the chat transcript. It is a showcase-only
+  stopgap. OAuth 2.1 replaces it, and this parameter should be removed then.
+- It departs from PRODUCT.md, Decisions > Identity, deletion, retention ("The skill stores it
+  locally. Every later call uses it."). The maintainer accepted that; PRODUCT.md is unchanged.

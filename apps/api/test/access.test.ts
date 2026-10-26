@@ -97,6 +97,71 @@ describe.skipIf(!hasTestDb)('access', () => {
     }
   })
 
+  test('an MCP host that cannot set a header passes the token as a parameter', async () => {
+    const sigrun = await publish(
+      app.handler,
+      'mcp',
+      profile({ firstName: 'Sigrún' })
+    )
+    const jon = await publish(
+      app.handler,
+      'mcp',
+      man({ firstName: 'Jón', brief: CELLO_BRIEF })
+    )
+    // A ChatGPT connector: no Authorization header on any call.
+    const session = await initialize(app.handler)
+    const as = <A>(
+      token: string,
+      tool: string,
+      args: Record<string, unknown> = {}
+    ) => callTool<A>(app.handler, session, tool, { ...args, token })
+
+    expect(ids(await as(sigrun.token, 'swipeless_candidates'))).toEqual([
+      jon.profileId,
+    ])
+    const { setup } = ok(
+      await as<{ setup: { setupId: string } }>(
+        sigrun.token,
+        'swipeless_interest',
+        { profileId: jon.profileId }
+      )
+    )
+    ok(await as(sigrun.token, 'swipeless_confirm', { setupId: setup.setupId }))
+    expect(
+      ok(
+        await as<{ setups: ReadonlyArray<{ setupId: string }> }>(
+          jon.token,
+          'swipeless_setups'
+        )
+      ).setups.map((one) => one.setupId)
+    ).toEqual([setup.setupId])
+    ok(await as(jon.token, 'swipeless_decline', { setupId: setup.setupId }))
+
+    // A wrong token is refused as it is in the header.
+    expect(failure(await as('never-issued', 'swipeless_setups'))._tag).toBe(
+      'Unauthorized'
+    )
+
+    // A header wins over the parameter, even when the header is wrong.
+    const both = await callTool(
+      app.handler,
+      session,
+      'swipeless_setups',
+      { token: sigrun.token },
+      'Bearer never-issued'
+    )
+    expect(failure(both)._tag).toBe('Unauthorized')
+
+    expect(
+      ok(await as<{ deleted: true }>(jon.token, 'swipeless_delete'))
+    ).toEqual({
+      deleted: true,
+    })
+    expect(failure(await as(jon.token, 'swipeless_setups'))._tag).toBe(
+      'Unauthorized'
+    )
+  })
+
   test('checking in keeps a profile alive; ninety quiet days make it Gone', async () => {
     const sigrun = await publish(
       app.handler,
