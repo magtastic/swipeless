@@ -32,16 +32,29 @@ export const SmsLog = Layer.succeed(
 const SEND_TIMEOUT = '10 seconds'
 
 /**
- * Sends through Twilio's Messages API. `SMS_FROM` is the sender: an
- * alphanumeric id like `swipeless` where the destination country allows one
- * (Iceland does), or a Twilio number. A Messaging Service sid (`MG…`) also
- * works there.
+ * The sender. Production sets the Twilio number, because a date request is
+ * answered by replying and nobody can reply to an alphanumeric id like
+ * `swipeless` (docs/decisions.md, 2026-10-26). A Messaging Service sid
+ * (`MG…`) also works here.
  */
+const SMS_FROM = Config.string('SMS_FROM').pipe(Config.withDefault('swipeless'))
+
+const digits = (phone: string) => phone.replace(/\D/g, '')
+
+/**
+ * Whether `to` is our own sending number, which Twilio refuses to text
+ * (error 21266). The showcase match profile carries that number.
+ */
+export const isOwnNumber = (to: string): Effect.Effect<boolean> =>
+  SMS_FROM.pipe(
+    Effect.map((from) => digits(from) !== '' && digits(from) === digits(to)),
+    Effect.orElseSucceed(() => false)
+  )
+
+/** Sends through Twilio's Messages API, from `SMS_FROM`. */
 const twilio = (accountSid: string, authToken: Redacted.Redacted) =>
   Effect.gen(function* () {
-    const from = yield* Config.string('SMS_FROM').pipe(
-      Config.withDefault('swipeless')
-    )
+    const from = yield* SMS_FROM
     const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`
     const authorization = `Basic ${Buffer.from(`${accountSid}:${Redacted.value(authToken)}`).toString('base64')}`
     return Sms.of({

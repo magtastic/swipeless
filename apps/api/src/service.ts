@@ -17,6 +17,7 @@ import {
   type InterestResponse,
   type NotFound,
   type Profile,
+  type ProfileId,
   PublishResponse,
   type RateLimited,
   type SetupsResponse,
@@ -31,6 +32,7 @@ import {
   ne,
   notInArray,
   or,
+  sql,
 } from 'drizzle-orm'
 import { Array as Arr, Clock, Effect, Option, Schedule } from 'effect'
 import { AfterResponse } from './after-response.ts'
@@ -357,6 +359,26 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
 
       setups: (): Effect.Effect<SetupsResponse, never, CurrentProfile> =>
         Effect.flatMap(CurrentProfile, (current) => lifecycle.listFor(current)),
+
+      /**
+       * Who texts from this number, newest first, for answering a date
+       * request by reply. Digits only, so `+354 847 0454` is `+3548470454`.
+       */
+      profilesWithPhone: (
+        phone: string
+      ): Effect.Effect<ReadonlyArray<ProfileId>> =>
+        Effect.gen(function* () {
+          const digits = phone.replace(/\D/g, '')
+          if (digits === '') return []
+          const rows = yield* db
+            .select({ id: profiles.id })
+            .from(profiles)
+            .where(
+              sql`regexp_replace(${profiles.phone}, '[^0-9]', '', 'g') = ${digits}`
+            )
+            .orderBy(sql`${profiles.createdAt} desc`)
+          return rows.map((row) => row.id as ProfileId)
+        }).pipe(Effect.orDie),
     }
   }),
 }) {}

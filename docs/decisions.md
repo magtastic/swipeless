@@ -272,3 +272,24 @@ For the live demo at AI Makers Iceland on 2026-10-27.
   Vercel projects (read per request, so it stops at once), then delete the match profile with
   `DELETE /profile` and the token the script printed. After the talk, remove `showcase.ts`,
   `showcase-now.ts`, the admin's showcase section, the script and `showcase/`.
+
+## 2026-10-26: Date requests answered by replying to the text
+
+Found by experiment the night before the AI Makers demo, against an Icelandic phone.
+
+- **The carrier drops any SMS with a link in it.** Twilio reported every message `delivered`, but
+  a text containing a link, short or long, never arrived, whether sent from the alphanumeric id
+  `swipeless` or from our Twilio number. The same texts without a link arrived from both. So no
+  SMS carries a link any more. Emails keep theirs.
+- **A departure from PRODUCT.md, SMS, email and small pages** ("the message links a small
+  single-purpose page"). By text, a date request is answered by replying yes or no: Twilio posts
+  the reply to `POST /sms/inbound`, which checks `X-Twilio-Signature`, finds the sender by phone
+  number and answers the open request through the same `Swipeless.confirm` and `decline` as the
+  small page and the agent tools. yes, y, já and ja say yes; no, n and nei say no; anything else
+  is asked again. The small page stays, linked from the email.
+- **The sender is a number, `SMS_FROM=+13347215271`.** Nobody can reply to an alphanumeric id.
+  The Twilio number's SMS webhook points at `https://api.swipeless.me/sms/inbound`.
+- The texts are short, about three UCS-2 segments: Icelandic letters force UCS-2, 67 characters a
+  segment. The fit line is dropped when it would make the request longer.
+- The showcase match profile carries our own Twilio number, and Twilio refuses to text a number
+  from itself (21266), so the notifier never texts `SMS_FROM`.

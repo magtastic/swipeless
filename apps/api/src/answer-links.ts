@@ -14,7 +14,7 @@ import { Config, Effect, Redacted } from 'effect'
  * tests can build the routes without it.
  */
 
-const API_BASE_URL = Config.string('API_BASE_URL').pipe(
+export const API_BASE_URL = Config.string('API_BASE_URL').pipe(
   Config.withDefault('https://api.swipeless.me')
 )
 
@@ -33,7 +33,7 @@ export type Choice = 'yes' | 'no'
 
 /**
  * The page's URL for this person and setup, with an answer picked in advance
- * or, for a text that has room for one link only, none.
+ * or none.
  */
 export const answerUrl = (
   setupId: string,
