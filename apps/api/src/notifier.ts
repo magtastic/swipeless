@@ -4,7 +4,6 @@ import {
   type DatePlace,
   dateConfirmed,
   dateRequested,
-  formatDateTime,
   Mailer,
 } from '@swipeless/email'
 import type { ProfileId, SetupId } from '@swipeless/shared'
@@ -12,7 +11,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
 import { answerPhotoUrl, answerUrl } from './answer-links.ts'
 import { FitWriter } from './fit-writer.ts'
-import { Sms } from './sms.ts'
+import { isOwnNumber, Sms } from './sms.ts'
 
 /**
  * PRODUCT.md, SMS, email and small pages: "Everything after signup reaches
@@ -44,43 +43,72 @@ export class Notifier extends Context.Tag('Notifier')<
 >() {}
 
 /**
- * The texts, in the Voice of PRODUCT.md: a short letter from a friend. The
- * request carries one link, to the small page that asks yes or no.
+ * The texts, in the Voice of PRODUCT.md: a short letter from a friend. They
+ * carry no link: Icelandic carriers silently drop a text with one in it, so
+ * the date request is answered by replying yes or no (docs/decisions.md,
+ * 2026-10-26). The email keeps its links.
+ *
+ * Short on purpose. Icelandic letters make a text UCS-2, 67 characters a
+ * segment once it splits, so the request aims at three segments and drops
+ * the fit line before it grows past them.
  */
 const SIGN_OFF = 'xo, swipeless'
+const THREE_SEGMENTS = 3 * 67
+
+const REYKJAVIK = 'Atlantic/Reykjavik'
+
+/** "saturday 31 oct, 15:00", in Reykjavík time. */
+export const shortWhen = (iso: string): string => {
+  const at = new Date(iso)
+  const day = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    timeZone: REYKJAVIK,
+  }).format(at)
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: REYKJAVIK,
+  }).format(at)
+  return `${day}, ${time}`.toLowerCase()
+}
 
 const place = (date: DatePlace) =>
-  `${date.venue.name}, ${date.venue.address}\n${formatDateTime(date.time)}`
+  `${shortWhen(date.time)}, ${date.venue.name}.`
+
+/** A fit line as one clause: trimmed, ending in a full stop. */
+const clause = (fit: string) => {
+  const line = fit.trim()
+  return /[.!?]$/.test(line) ? line : `${line}.`
+}
 
 export const dateRequestedText = (
   firstName: string,
   other: { readonly firstName: string; readonly age: number },
   date: DatePlace,
-  answerLink: string | undefined,
   fit: string | undefined
-): string =>
-  [
-    `hi ${firstName}, ${other.firstName}, ${other.age}, would like to meet you.`,
-    ...(fit ? [fit] : []),
-    place(date),
-    answerLink
-      ? `yes or no? ${answerLink}`
-      : 'yes or no? ask your agent about swipeless.',
-    `no is always enough. ${SIGN_OFF}`,
-  ].join('\n\n')
+): string => {
+  const text = (fitLine: string | undefined) =>
+    [
+      `hi ${firstName}. ${other.firstName}, ${other.age}, would like to meet you.`,
+      ...(fitLine ? [clause(fitLine)] : []),
+      place(date),
+      `reply yes or no. ${SIGN_OFF}`,
+    ].join(' ')
+  const full = text(fit)
+  return full.length <= THREE_SEGMENTS ? full : text(undefined)
+}
 
 export const dateConfirmedText = (
-  firstName: string,
   otherFirstName: string,
   otherPhone: string,
   date: DatePlace
 ): string =>
-  [
-    `hi ${firstName}, you and ${otherFirstName} both said yes.`,
-    place(date),
-    `${otherFirstName}'s number: ${otherPhone}`,
-    `text them, say hi. ${SIGN_OFF}`,
-  ].join('\n\n')
+  `it's a date. ${otherFirstName}'s number: ${otherPhone}. ${place(date)} have fun. ${SIGN_OFF}`
+
+/** The reply to a no by text. Nobody else is told anything. */
+export const declinedText = `ok, no it is. nobody is told why. ${SIGN_OFF}`
 
 /**
  * Texts every person at the phone number they gave, and emails the ones who
@@ -175,6 +203,13 @@ export const NotifierLive = Layer.effect(
         }
       })
 
+    /** Never to our own sending number: Twilio refuses it (21266). */
+    const text = (to: string, body: string) =>
+      Effect.if(isOwnNumber(to), {
+        onTrue: () => Effect.logInfo('notify: not texted, our own number'),
+        onFalse: () => sms.send({ to, body }),
+      })
+
     const notify = (
       kind: 'date requested' | 'date confirmed',
       profileId: ProfileId,
@@ -188,19 +223,10 @@ export const NotifierLive = Layer.effect(
         const { date, self, other } = found
         if (kind === 'date requested') {
           const extras = yield* requestExtras(setupId, profileId, self, other)
-          const link = yield* answerUrl(setupId, profileId).pipe(
-            Effect.orElseSucceed(() => undefined)
+          yield* text(
+            self.phone,
+            dateRequestedText(self.firstName, other, date, extras.fit)
           )
-          yield* sms.send({
-            to: self.phone,
-            body: dateRequestedText(
-              self.firstName,
-              other,
-              date,
-              link,
-              extras.fit
-            ),
-          })
           if (self.email) {
             yield* mailer.send(
               dateRequested(
@@ -213,15 +239,10 @@ export const NotifierLive = Layer.effect(
             )
           }
         } else {
-          yield* sms.send({
-            to: self.phone,
-            body: dateConfirmedText(
-              self.firstName,
-              other.firstName,
-              other.phone,
-              date
-            ),
-          })
+          yield* text(
+            self.phone,
+            dateConfirmedText(other.firstName, other.phone, date)
+          )
           if (self.email) {
             yield* mailer.send(
               dateConfirmed(

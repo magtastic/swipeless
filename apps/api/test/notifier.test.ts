@@ -134,12 +134,12 @@ describe.skipIf(!hasTestDb)('NotifierLive', () => {
     const [text] = texts
     expect(text?.to).toBe('+354822000')
     expect(text?.body).toStartWith(
-      'hi Name0, Name1, 30, would like to meet you.'
+      'hi Name0. Name1, 30, would like to meet you.'
     )
     expect(text?.body).toContain('you and Name1 both swim in the sea.')
     expect(text?.body).toContain(FAKE_DATE.venue.name)
-    expect(text?.body).toContain('yes or no? http://answer.test/answer?')
-    expect(text?.body).not.toContain('choice=')
+    expect(text?.body).toContain('reply yes or no.')
+    expect(text?.body).not.toContain('http')
     expect(text?.body).not.toContain('+35482200')
     expect(text?.body).toEndWith('xo, swipeless')
   })
