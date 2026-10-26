@@ -20,9 +20,11 @@ import {
   type PendingProfile,
   type ReviewQueue,
 } from '../lib/review.ts'
+import { loadShowcaseTargets, type ShowcaseTarget } from '../lib/showcase.ts'
 import { loadTestPeople, type TestPerson } from '../lib/test-tools.ts'
 import { followUpDate } from './date-actions.ts'
 import { approveProfile, rejectProfile } from './review-actions.ts'
+import { sendShowcaseRequestNow } from './showcase-actions.ts'
 import { pickAndSayYes } from './test-actions.ts'
 
 /** Every read is per-request, and `next build` runs without a database. */
@@ -353,6 +355,58 @@ function TestTools({
   )
 }
 
+function ShowcaseTools({
+  targets,
+  result,
+}: {
+  targets: ReadonlyArray<ShowcaseTarget>
+  result: string | undefined
+}) {
+  return (
+    <section
+      id="showcase"
+      className="flex flex-col gap-4 rounded-xl border border-dashed border-red p-5"
+    >
+      <div>
+        <h2 className="text-lg font-semibold">Showcase</h2>
+        <p className="mt-1 text-sm text-soft">
+          If the timer misfires on stage: the prepared match picks this person
+          and says yes now, so the date request goes out by text. Pressed again,
+          it sends the same text again. Off once SHOWCASE_MATCH_PROFILE_ID is
+          unset.
+        </p>
+      </div>
+      <form
+        action={sendShowcaseRequestNow}
+        className="flex flex-wrap items-end gap-3"
+      >
+        <label className="flex flex-col gap-1 text-sm">
+          Send to
+          <select
+            name="targetId"
+            required
+            className="rounded-md border border-rule-strong bg-sheet px-3 py-2"
+          >
+            {targets.map((target) => (
+              <option key={target.id} value={target.id}>
+                {target.firstName} · {target.id.slice(0, 8)}
+                {target.presenter ? ' · showcase phone' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          className="rounded-md border border-red px-4 py-2 text-sm font-semibold text-red hover:bg-red/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        >
+          Send the showcase date request now
+        </button>
+      </form>
+      {result && <p className="text-sm">Last run: {result}</p>}
+    </section>
+  )
+}
+
 function PrivateDetails({
   note,
   details,
@@ -587,7 +641,11 @@ function Events({ events }: { events: ReadonlyArray<AdminEvent> }) {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string | string[]; test?: string | string[] }>
+  searchParams: Promise<{
+    page?: string | string[]
+    test?: string | string[]
+    showcase?: string | string[]
+  }>
 }) {
   const session = await auth()
   if (!session?.user) redirect('/signin')
@@ -599,12 +657,14 @@ export default async function Page({
     requestedPage <= 100000
       ? requestedPage
       : 1
-  const [result, review, dates, testPeople] = await Promise.all([
-    loadDashboard(page, session.user.email),
-    loadReviewQueue(session.user.email),
-    loadConfirmedDates(session.user.email),
-    loadTestPeople(session.user.email),
-  ])
+  const [result, review, dates, testPeople, showcaseTargets] =
+    await Promise.all([
+      loadDashboard(page, session.user.email),
+      loadReviewQueue(session.user.email),
+      loadConfirmedDates(session.user.email),
+      loadTestPeople(session.user.email),
+      loadShowcaseTargets(session.user.email),
+    ])
   const now = Date.now()
 
   return (
@@ -651,6 +711,14 @@ export default async function Page({
             <p className="text-sm text-red">
               The review queue could not load: {review.reason}
             </p>
+          )}
+          {showcaseTargets.length > 0 && (
+            <ShowcaseTools
+              targets={showcaseTargets}
+              result={
+                typeof query.showcase === 'string' ? query.showcase : undefined
+              }
+            />
           )}
           {testPeople.length > 0 && (
             <TestTools

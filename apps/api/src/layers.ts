@@ -7,14 +7,15 @@ import { Caller } from './caller.ts'
 import { DateSuggesterRules } from './date-suggester.ts'
 import { EmbeddingModelOpenAi } from './embeddings.ts'
 import { FitWriterClaude } from './fit-writer.ts'
-import { NotifierEmail } from './notifier.ts'
+import { NotifierLive } from './notifier.ts'
 import { Swipeless } from './service.ts'
+import { SmsLive } from './sms.ts'
 
 /**
  * The production application layer: the service and the caller resolver, both
  * over Postgres, with OpenAI behind the embeddings seam, the rule-based date
- * suggester, and a notifier that emails through Resend until there is an SMS
- * provider (and only logs without RESEND_API_KEY).
+ * suggester, and a notifier that texts through Twilio and emails through
+ * Resend (each only logs without its key).
  * The bearer-auth middleware is derived from Caller inside http.ts, so it is
  * not here.
  *
@@ -27,8 +28,9 @@ export const AppLive = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
   Layer.provide(EmbeddingModelOpenAi),
   Layer.provide(AfterResponseVercel),
   Layer.provide(DateSuggesterRules),
-  Layer.provide(NotifierEmail),
+  Layer.provide(NotifierLive),
   Layer.provide(FitWriterClaude),
   Layer.provide(MailerLive),
+  Layer.provide(SmsLive),
   Layer.provide(DbLive)
 )

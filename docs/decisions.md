@@ -250,3 +250,25 @@ bend it, noted below.
 - ChatGPT-specific and showcase-driven, for the demo on 2026-10-27. It departs from PRODUCT.md,
   The flow ("add a photo on a small page we text them") and Identity ("The photo is required and
   added on a small page we text them"). PRODUCT.md is unchanged.
+
+## 2026-10-26: Texts through Twilio, and a staged date request for the showcase
+
+For the live demo at AI Makers Iceland on 2026-10-27.
+
+- Date requests and confirmations now go by SMS through Twilio, as PRODUCT.md always said, and
+  still by email when there is an address. Not a departure; recorded because it replaces the
+  email-only notifier.
+- **Showcase only, a departure.** When a profile with `SHOWCASE_PHONE` publishes, the prepared
+  match profile `SHOWCASE_MATCH_PROFILE_ID` picks it and says yes after
+  `SHOWCASE_DELAY_SECONDS` (default 30), through the real setup lifecycle. Her interest is
+  staged, not an agent's pick, and her yes is not a human's: PRODUCT.md, Trust, "the human, not
+  the AI, says yes to every date", does not hold for her side. The admin site has a super-admin
+  button that does the same at once, as a fallback. The match profile is excluded from every
+  caller's candidates.
+- **Showcase only, a departure.** `apps/api/scripts/showcase-publish.ts` publishes the match
+  profile to production from `showcase/match-profile.json`, on purpose and only with an explicit
+  `--target`. Her phone is a number Smitten controls, since the presenter's number is texted to it.
+- To turn it off: unset `SHOWCASE_PHONE` and `SHOWCASE_MATCH_PROFILE_ID` on the API and admin
+  Vercel projects (read per request, so it stops at once), then delete the match profile with
+  `DELETE /profile` and the token the script printed. After the talk, remove `showcase.ts`,
+  `showcase-now.ts`, the admin's showcase section, the script and `showcase/`.

@@ -31,8 +31,15 @@ const sign = (key: string, setupId: string, profileId: string) =>
 
 export type Choice = 'yes' | 'no'
 
-/** The page's URL for this person and setup, with an answer picked in advance. */
-export const answerUrl = (setupId: string, profileId: string, choice: Choice) =>
+/**
+ * The page's URL for this person and setup, with an answer picked in advance
+ * or, for a text that has room for one link only, none.
+ */
+export const answerUrl = (
+  setupId: string,
+  profileId: string,
+  choice?: Choice
+) =>
   Effect.gen(function* () {
     const base = yield* API_BASE_URL
     const signature = sign(yield* secret, setupId, profileId)
@@ -40,7 +47,7 @@ export const answerUrl = (setupId: string, profileId: string, choice: Choice) =>
       setup: setupId,
       profile: profileId,
       sig: signature,
-      choice,
+      ...(choice ? { choice } : {}),
     })
     return `${base}/answer?${query}`
   })

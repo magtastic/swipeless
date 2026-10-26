@@ -1,0 +1,15 @@
+{
+  "age": 32,
+  "gender": "woman",
+  "interestedIn": ["man"],
+  "city": "Reykjavík",
+  "country": "IS",
+  "radiusKm": 25,
+  "availability": "weekday evenings, weekends",
+  "brief": "FILL IN: two or three sentences about her, in the third person, like the briefs agents write: what she does, what she values, one dealbreaker.",
+  "firstName": "FILL IN",
+  "photoUrl": "https://FILL-IN.example/photo.jpg",
+  "privateLayer": {
+    "phone": "FILL IN: a number Smitten controls, such as the Twilio number"
+  }
+}
