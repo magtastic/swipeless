@@ -20,9 +20,14 @@ import {
   type PendingProfile,
   type ReviewQueue,
 } from '../lib/review.ts'
-import { loadShowcaseTargets, type ShowcaseTarget } from '../lib/showcase.ts'
+import {
+  isShowcaseMatch,
+  loadShowcaseTargets,
+  type ShowcaseTarget,
+} from '../lib/showcase.ts'
 import { loadTestPeople, type TestPerson } from '../lib/test-tools.ts'
 import { followUpDate } from './date-actions.ts'
+import { DeleteProfileButton } from './delete-button.tsx'
 import { approveProfile, rejectProfile } from './review-actions.ts'
 import { sendShowcaseRequestNow } from './showcase-actions.ts'
 import { pickAndSayYes } from './test-actions.ts'
@@ -160,6 +165,13 @@ function PendingCard({
                 Reject
               </button>
             </form>
+            {profile.note && (
+              <DeleteProfileButton
+                profileId={profile.id}
+                firstName={profile.note.firstName}
+                showcaseMatch={isShowcaseMatch(profile.id)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -530,6 +542,13 @@ function ProfileOverviews({
                 <PrivateDetails
                   note={profile.note}
                   details={profile.privateDetails}
+                />
+              )}
+              {profile.note && (
+                <DeleteProfileButton
+                  profileId={profile.id}
+                  firstName={profile.note.firstName}
+                  showcaseMatch={isShowcaseMatch(profile.id)}
                 />
               )}
               <div>

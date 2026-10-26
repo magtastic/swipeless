@@ -64,3 +64,6 @@ export const loadShowcaseTargets = (
     )
   )
 }
+
+/** Whether `profileId` is the published showcase match. */
+export const isShowcaseMatch = (profileId: string) => matchId() === profileId
