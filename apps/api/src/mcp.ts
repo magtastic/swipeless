@@ -1,5 +1,6 @@
 import { McpServer, Tool, Toolkit } from '@effect/ai'
 import { HttpServerRequest } from '@effect/platform'
+import { ProfilePhotos } from '@swipeless/photos'
 import {
   CandidatesError,
   CandidatesResponse,
@@ -14,9 +15,11 @@ import {
   InterestError,
   InterestRequest,
   InterestResponse,
+  PhotoUpload,
+  PhotoUrl,
   Profile,
-  PublishError,
   PublishResponse,
+  PublishUploadError,
   SetupsError,
   SetupsResponse,
   Unauthorized,
@@ -51,11 +54,67 @@ export const SERVER_DESCRIPTION =
 
 const publish = Tool.make('swipeless_publish', {
   description:
-    'Sign your human up for swipeless so it can find them a date with a real person nearby. Use when they ask to find a date, meet someone, or stop swiping. Before calling, get to know them in a warm, easy conversation, like a friend over coffee: one question per message, react to each answer, and never send a list or form of what you need. Start with what they are hoping for, and let the facts below come up naturally, one at a time; ask for the phone number and photo last, saying why. Write the brief only from what they tell you in this conversation, never from memory or other context. Then show them what will be shared and call this only after an explicit yes. Takes the structured core, a third-person brief, their first name, a photo (https URL or inline image) and their phone number. The profile is live and can be matched as soon as this returns. Returns a profileId and a bearer token: save the token, it is shown once and every other tool needs it. Send it as an Authorization: Bearer header if you can; if your host cannot set headers, keep it in this conversation and pass it as `token` on every later swipeless call.',
-  parameters: Profile.fields,
+    'Sign your human up for swipeless so it can find them a date with a real person nearby. Use when they ask to find a date, meet someone, or stop swiping. Before calling, get to know them in a warm, easy conversation, like a friend over coffee: one question per message, react to each answer, and never send a list or form of what you need. Start with what they are hoping for, and let the facts below come up naturally, one at a time; ask for the phone number and photo last, saying why. Write the brief only from what they tell you in this conversation, never from memory or other context. Then show them what will be shared and call this only after an explicit yes. Takes the structured core, a third-person brief, their first name, a photo and their phone number. In ChatGPT, ask them to drop a photo into the chat and pass it as `photo`; anywhere else, pass `photoUrl` as an https URL or an inline image. The profile is live and can be matched as soon as this returns. Returns a profileId and a bearer token: save the token, it is shown once and every other tool needs it. Send it as an Authorization: Bearer header if you can; if your host cannot set headers, keep it in this conversation and pass it as `token` on every later swipeless call.',
+  parameters: {
+    ...Profile.fields,
+    // One of the two is required; the handler says so if both are missing.
+    photoUrl: Schema.optional(PhotoUrl),
+    photo: Schema.optional(PhotoUpload),
+  },
   success: PublishResponse,
-  failure: PublishError,
+  failure: PublishUploadError,
 })
+
+/**
+ * SHOWCASE-ONLY (docs/decisions.md, 2026-10-26). ChatGPT passes a photo the
+ * person dropped into the chat only to a tool whose descriptor lists the
+ * argument in `_meta["openai/fileParams"]`. `@effect/ai` 0.37 has no field
+ * for a tool's `_meta`, and the tools/list result is encoded through a schema
+ * that drops unknown keys, so it is added to the response on its way out.
+ */
+const TOOL_META: Record<string, Record<string, unknown>> = {
+  swipeless_publish: { 'openai/fileParams': ['photo'] },
+}
+
+type ToolsList = {
+  readonly result?: { readonly tools?: Array<Record<string, unknown>> }
+}
+
+const withToolMeta = (message: ToolsList) => {
+  for (const tool of message.result?.tools ?? []) {
+    const meta = TOOL_META[String(tool.name)]
+    if (meta !== undefined) tool._meta = { ...meta }
+  }
+  return message
+}
+
+/** Adds TOOL_META to a tools/list answer from /mcp; passes anything else on. */
+export const addToolMeta =
+  (handler: (request: Request) => Promise<Response>) =>
+  async (request: Request): Promise<Response> => {
+    const response = await handler(request)
+    if (
+      request.method !== 'POST' ||
+      new URL(request.url).pathname !== '/mcp' ||
+      !(response.headers.get('content-type') ?? '').includes('application/json')
+    ) {
+      return response
+    }
+    const text = await response.text()
+    const rebuilt = (body: string) =>
+      new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      })
+    if (!text.includes('"tools"')) return rebuilt(text)
+    const json = JSON.parse(text) as ToolsList | Array<ToolsList>
+    return rebuilt(
+      JSON.stringify(
+        Array.isArray(json) ? json.map(withToolMeta) : withToolMeta(json)
+      )
+    )
+  }
 
 /**
  * SHOWCASE-ONLY STOPGAP (docs/decisions.md, 2026-10-26). ChatGPT connectors
@@ -177,6 +236,7 @@ const SwipelessToolkitLive = SwipelessToolkit.toLayer(
   Effect.gen(function* () {
     const service = yield* Swipeless
     const caller = yield* Caller
+    const photos = yield* ProfilePhotos
 
     /** What the REST middleware does, per tool call: resolve, then provide. */
     const authenticated = <A, E>(
@@ -192,7 +252,27 @@ const SwipelessToolkitLive = SwipelessToolkit.toLayer(
     return {
       // Publishing is how an agent gets a token, so it is the one tool that
       // does not need one.
-      swipeless_publish: (params) => service.publish(new Profile(params)),
+      swipeless_publish: ({ photo, photoUrl, ...params }) =>
+        Effect.gen(function* () {
+          if (photo === undefined) {
+            if (photoUrl === undefined) {
+              return yield* new PublishUploadError({
+                message:
+                  'A photo is required. In ChatGPT, ask them to drop one into the chat; otherwise pass photoUrl.',
+              })
+            }
+            return yield* service.publish(new Profile({ ...params, photoUrl }))
+          }
+          // An upload is already in private storage by the time the profile
+          // is built, so its key stands in for photoUrl. The key is not a
+          // valid PhotoUrl, which is why validation is skipped here and only
+          // here; publish's `store` keeps a key as given and its discard on
+          // failure removes it.
+          const key = yield* photos.storeUpload(photo)
+          return yield* service
+            .publish(new Profile({ ...params, photoUrl: key }, true))
+            .pipe(Effect.onError(() => photos.discard(key)))
+        }),
       swipeless_candidates: ({ limit, token }) =>
         authenticated(token, service.candidates(limit ?? 10)),
       swipeless_interest: ({ token, ...params }) =>

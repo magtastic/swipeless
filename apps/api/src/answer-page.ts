@@ -10,6 +10,7 @@ import {
   type Line,
   note,
 } from '@swipeless/email'
+import { MAX_UPLOAD_BYTES, readCapped } from '@swipeless/photos'
 import {
   ConfirmRequest,
   DeclineRequest,
@@ -183,9 +184,6 @@ const PhotoParams = Schema.Struct({
 
 const noPhoto = HttpServerResponse.empty({ status: 404 })
 
-/** Stored photos are at most 1 MiB; anything past this is not one of ours. */
-const MAX_PHOTO_BYTES = 2 * 1024 * 1024
-
 /**
  * Only our own stored photos are proxied: the short-lived link the admin
  * app's photo route signs. An external https photo is linked from the email
@@ -205,32 +203,6 @@ export const isOwnPhotoLink = (link: string, base: string) => {
   } catch {
     return false
   }
-}
-
-/** Reads at most `limit` bytes, or undefined if the body is longer. */
-const readCapped = async (response: Response, limit: number) => {
-  const declared = Number(response.headers.get('content-length') ?? '0')
-  if (declared > limit || response.body === null) return undefined
-  const reader = response.body.getReader()
-  const chunks: Array<Uint8Array> = []
-  let size = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    size += value.byteLength
-    if (size > limit) {
-      await reader.cancel()
-      return undefined
-    }
-    chunks.push(value)
-  }
-  const bytes = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return bytes
 }
 
 /**
@@ -259,7 +231,7 @@ const photo = (swipeless: Service) =>
       return yield* noPhoto
     }
     const bytes = yield* Effect.tryPromise(() =>
-      readCapped(response, MAX_PHOTO_BYTES)
+      readCapped(response, MAX_UPLOAD_BYTES)
     )
     if (bytes === undefined) return yield* noPhoto
     return HttpServerResponse.uint8Array(bytes, {

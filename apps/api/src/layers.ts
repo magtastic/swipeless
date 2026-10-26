@@ -21,7 +21,8 @@ import { Swipeless } from './service.ts'
  * misconfigured deploy. Tests substitute their own layer of the same shape.
  */
 export const AppLive = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
-  Layer.provide(ProfilePhotosLive),
+  // Merged out too: the MCP publish tool stores ChatGPT uploads itself.
+  Layer.provideMerge(ProfilePhotosLive),
   Layer.provide(EmbeddingModelOpenAi),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierEmail),

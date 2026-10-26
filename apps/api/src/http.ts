@@ -5,12 +5,13 @@ import {
   HttpPlatform,
   Path,
 } from '@effect/platform'
+import type { ProfilePhotos } from '@swipeless/photos'
 import { Layer } from 'effect'
 import { AnswerRoutes } from './answer-page.ts'
 import { SwipelessApi } from './api.ts'
 import type { Caller } from './caller.ts'
 import { BearerAuthLive, SwipelessGroupLive } from './handlers.ts'
-import { McpRoutes } from './mcp.ts'
+import { addToolMeta, McpRoutes } from './mcp.ts'
 import type { Swipeless } from './service.ts'
 
 /**
@@ -47,10 +48,16 @@ export const AllRoutes = Layer.mergeAll(
  * Builds the web handler over a given app layer. Production passes AppLive
  * (service + caller over Postgres and OpenAI); the tests pass the same services
  * over the test database, with embeddings, photos and SMS kept in process.
+ *
+ * The handler adds each tool's `_meta` to tools/list on the way out (see
+ * `addToolMeta`). `bun run dev` serves the routes without this wrapper, so
+ * locally tools/list carries no `_meta`.
  */
 export const makeWebHandler = <E>(
-  appLayer: Layer.Layer<Swipeless | Caller, E>
-) =>
-  HttpLayerRouter.toWebHandler(
+  appLayer: Layer.Layer<Swipeless | Caller | ProfilePhotos, E>
+) => {
+  const web = HttpLayerRouter.toWebHandler(
     AllRoutes.pipe(Layer.provide(appLayer), Layer.provideMerge(PlatformLive))
   )
+  return { ...web, handler: addToolMeta(web.handler) }
+}

@@ -155,6 +155,7 @@ const NoObjectStorage = Layer.succeed(
   ProfilePhotos,
   makeProfilePhotos({
     blobs: memoryBlobStore(),
+    download: () => Effect.dieMessage('the seed uploads nothing'),
     secret: 'seed-unused',
     baseUrl: 'https://invalid',
   })

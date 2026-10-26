@@ -231,3 +231,22 @@ bend it, noted below.
   stopgap. OAuth 2.1 replaces it, and this parameter should be removed then.
 - It departs from PRODUCT.md, Decisions > Identity, deletion, retention ("The skill stores it
   locally. Every later call uses it."). The maintainer accepted that; PRODUCT.md is unchanged.
+
+## 2026-10-26: A photo dropped into ChatGPT, for the AI Makers demo
+
+- `swipeless_publish` takes an optional `photo` argument and lists it in
+  `_meta["openai/fileParams"]`, so ChatGPT passes a photo the person dropped into the chat as
+  `{ download_url, file_id }`. Before this, ChatGPT could only pass an https URL or base64, which it
+  cannot produce from an upload, so it asked the person for a public link.
+- `photoUrl` keeps working for every other host, and REST takes only `photoUrl`. One of the two is
+  required over MCP.
+- The server fetches `download_url` only over HTTPS from `oaiusercontent.com`, `chatgpt.com` or
+  `openai.com` (and their subdomains), with a ten-second timeout, and keeps it only if its bytes
+  are a JPEG, PNG or WebP of at most 4 MiB. Uploads may be larger than the 1 MiB inline cap,
+  because a photo off a phone usually is; 4 MiB stays under what a Vercel Function can serve back.
+  The email photo route's cap rose from 2 MiB to the same 4 MiB so those photos still show.
+- `@effect/ai` 0.37 cannot put `_meta` on a tool, so the web handler adds it to the tools/list
+  answer on its way out (`addToolMeta` in `apps/api/src/mcp.ts`). `bun run dev` does not wrap.
+- ChatGPT-specific and showcase-driven, for the demo on 2026-10-27. It departs from PRODUCT.md,
+  The flow ("add a photo on a small page we text them") and Identity ("The photo is required and
+  added on a small page we text them"). PRODUCT.md is unchanged.
