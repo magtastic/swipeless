@@ -33,7 +33,6 @@ describe.skipIf(!hasTestDb)('matching', () => {
       gender: 'man',
       interestedIn: ['woman'],
     })
-    await app.approve(stale.profileId)
     app.travel(Duration.days(91))
 
     const sigrun = await join({ firstName: 'Sigrún' })
@@ -49,7 +48,7 @@ describe.skipIf(!hasTestDb)('matching', () => {
       interestedIn: ['woman'],
       brief: CELLO_BRIEF,
     })
-    const excluded = await Promise.all([
+    await Promise.all([
       // Sigrún is not interested in women.
       join({ firstName: 'Halla', gender: 'woman', interestedIn: ['woman'] }),
       // Not interested in Sigrún's gender.
@@ -62,23 +61,6 @@ describe.skipIf(!hasTestDb)('matching', () => {
         country: 'GB',
       }),
     ])
-    // Right in every way, but nobody has checked him yet.
-    const pending = await join({
-      firstName: 'Gunnar',
-      gender: 'man',
-      interestedIn: ['woman'],
-    })
-
-    // Sigrún herself is not live until approved.
-    expect(ids(await sigrun.candidates())).toEqual([])
-
-    await app.approve(
-      sigrun.profileId,
-      twin.profileId,
-      other.profileId,
-      ...excluded.map((one) => one.profileId)
-    )
-
     const ranked = ok(await sigrun.candidates()).candidates
     expect(ranked.map((one) => one.profileId)).toEqual([
       twin.profileId,
@@ -89,7 +71,7 @@ describe.skipIf(!hasTestDb)('matching', () => {
     expect(ids(await sigrun.candidates(1))).toEqual([twin.profileId])
 
     // A pick is held to the same pool.
-    for (const target of [sigrun, stale, pending]) {
+    for (const target of [sigrun, stale]) {
       expect(failure(await sigrun.pick(target.profileId))._tag).toBe('NotFound')
     }
     expect(
@@ -109,8 +91,6 @@ describe.skipIf(!hasTestDb)('matching', () => {
       'rest',
       man({ firstName: 'Einar', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId, einar.profileId)
-
     // Picked pairs leave each other's candidates while the setup is open.
     const withJon = ok(await sigrun.pick(jon.profileId)).setup
     const withEinar = ok(await sigrun.pick(einar.profileId)).setup
@@ -169,7 +149,6 @@ describe.skipIf(!hasTestDb)('the weekly ceiling on picks', () => {
         publish(app.handler, 'mcp', man({ firstName }))
       )
     )
-    await app.approve(sigrun.profileId, ...men.map((one) => one.profileId))
     const [jon, ari, einar] = men as [
       typeof sigrun,
       typeof sigrun,

@@ -89,9 +89,11 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
               firstName: profile.firstName,
               photoUrl: photoReference,
               phone: profile.privateLayer.phone,
-              // PRODUCT.md, Identity: "A person checks every profile before
-              // it goes live." Nobody is matched until that person approves.
-              reviewStatus: 'pending',
+              // Live the moment it is published, with no review first. This
+              // knowingly departs from PRODUCT.md, Identity: "A person checks
+              // every profile before it goes live." Back to 'pending' restores
+              // the admin review queue.
+              reviewStatus: 'approved',
               email: profile.email ?? null,
               standingInstructions: profile.standingInstructions ?? null,
               createdAt: at,
@@ -124,9 +126,9 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
        * gender interest, same country, and nobody the caller already shares a
        * setup with. Ranking is cosine distance over brief embeddings.
        *
-       * PRODUCT.md, Identity: "A person checks every profile before it goes
-       * live." Only approved profiles are ever returned, and a caller still
-       * waiting on that check is not live either, so it gets an empty page.
+       * Only approved profiles are ever returned, and a caller that is not
+       * approved is not live either, so it gets an empty page. Publish
+       * approves at once; see `publish`.
        *
        * PRODUCT.md also lists age and distance among the hard filters. Neither
        * can be applied: the core carries an age but no age preference, and a

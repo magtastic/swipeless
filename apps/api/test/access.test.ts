@@ -40,7 +40,6 @@ describe.skipIf(!hasTestDb)('access', () => {
       'mcp',
       man({ firstName: 'Jón', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId)
 
     // A third session, shared by both: if MCP resolved the caller once per
     // session, the second agent would be served as the first.
@@ -109,7 +108,6 @@ describe.skipIf(!hasTestDb)('access', () => {
       'rest',
       man({ firstName: 'Jón', brief: CELLO_BRIEF })
     )
-    await app.approve(sigrun.profileId, jon.profileId)
 
     // Any authenticated call is a check-in that buys another ninety days.
     app.travel(Duration.days(60))
@@ -177,8 +175,7 @@ describe.skipIf(!hasTestDb)('access', () => {
     expect(await app.query((db) => db.select().from(profiles))).toEqual([])
     expect(app.photos.size).toBe(0)
 
-    const fresh = await publish(app.handler, 'mcp', valid)
-    await app.approve(fresh.profileId)
+    await publish(app.handler, 'mcp', valid)
     expect(app.photos.size).toBe(1)
   })
 })

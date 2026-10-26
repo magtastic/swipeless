@@ -106,8 +106,9 @@ export class ProfileCore extends Schema.Class<ProfileCore>('ProfileCore')({
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
 
 /**
- * PRODUCT.md, Identity: "A person checks every profile before it goes live,
- * including that they are 18+." Only `approved` profiles are matched.
+ * Only `approved` profiles are matched. Publish creates them `approved`,
+ * departing from PRODUCT.md, Identity ("A person checks every profile before
+ * it goes live"); `pending` and the admin queue remain for going back.
  */
 export const ReviewStatus = Schema.Literal(...REVIEW_STATUSES).annotations({
   identifier: 'ReviewStatus',
