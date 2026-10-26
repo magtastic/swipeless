@@ -21,6 +21,7 @@ import {
   LogLevel,
   ManagedRuntime,
 } from 'effect'
+import { AfterResponse, makeAfterResponse } from '../../src/after-response.ts'
 import { Caller } from '../../src/caller.ts'
 import { DateSuggesterRules } from '../../src/date-suggester.ts'
 import { EmbeddingModelDeterministic } from '../../src/embeddings.ts'
@@ -41,6 +42,10 @@ import { Swipeless } from '../../src/service.ts'
  * - SMS: the notifier records who would have been told what.
  * - The wall clock: frozen at START until a test travels, so expiry, the weekly
  *   cap and the suggested date are exact.
+ *
+ * Work a request leaves running after its response, as Vercel's `waitUntil`
+ * does, is finished before the handler's promise resolves, so a test sees the
+ * world as it is once that work is done.
  */
 
 export { hasTestDb }
@@ -140,8 +145,21 @@ export const openApp = (options: AppOptions = {}): App => {
           ).pipe(ConfigProvider.orElse(() => ConfigProvider.fromEnv()))
         )
 
+  const pending = new Set<Promise<void>>()
+  const AfterResponseTracked = Layer.succeed(
+    AfterResponse,
+    makeAfterResponse((promise) => {
+      pending.add(promise)
+      void promise.finally(() => pending.delete(promise))
+    })
+  )
+  const settle = async () => {
+    while (pending.size > 0) await Promise.all(pending)
+  }
+
   const AppLayer = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
     Layer.provide(EmbeddingModelDeterministic),
+    Layer.provide(AfterResponseTracked),
     Layer.provide(DateSuggesterRules),
     Layer.provide(RecordingNotifier),
     Layer.provideMerge(Photos),
@@ -157,7 +175,11 @@ export const openApp = (options: AppOptions = {}): App => {
   let migrated = false
 
   return {
-    handler: web.handler,
+    handler: async (request) => {
+      const response = await web.handler(request)
+      await settle()
+      return response
+    },
     travel: (duration) => {
       at += Duration.toMillis(duration)
     },

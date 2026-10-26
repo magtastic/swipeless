@@ -27,6 +27,7 @@
     "@swipeless/email": "workspace:*",
     "@swipeless/photos": "workspace:*",
     "@swipeless/shared": "workspace:*",
+    "@vercel/functions": "3.9.11",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },

@@ -8,6 +8,7 @@ import {
 import { type Gender, PrivateLayer, Profile } from '@swipeless/shared'
 import { inArray, like } from 'drizzle-orm'
 import { Effect, Layer } from 'effect'
+import { AfterResponseInline } from '../src/after-response.ts'
 import { DateSuggesterRules } from '../src/date-suggester.ts'
 import {
   EmbeddingModelDeterministic,
@@ -222,6 +223,7 @@ const App = Swipeless.Default.pipe(
     fakeEmbeddings ? EmbeddingModelDeterministic : EmbeddingModelOpenAi
   ),
   Layer.provide(NoObjectStorage),
+  Layer.provide(AfterResponseInline),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierLog),
   Layer.provideMerge(DbLive)

@@ -2,6 +2,7 @@ import { DbLive } from '@swipeless/db'
 import { MailerLive } from '@swipeless/email'
 import { ProfilePhotosLive } from '@swipeless/photos'
 import { Layer } from 'effect'
+import { AfterResponseVercel } from './after-response.ts'
 import { Caller } from './caller.ts'
 import { DateSuggesterRules } from './date-suggester.ts'
 import { EmbeddingModelOpenAi } from './embeddings.ts'
@@ -24,6 +25,7 @@ export const AppLive = Layer.mergeAll(Swipeless.Default, Caller.Default).pipe(
   // Merged out too: the MCP publish tool stores ChatGPT uploads itself.
   Layer.provideMerge(ProfilePhotosLive),
   Layer.provide(EmbeddingModelOpenAi),
+  Layer.provide(AfterResponseVercel),
   Layer.provide(DateSuggesterRules),
   Layer.provide(NotifierEmail),
   Layer.provide(FitWriterClaude),
