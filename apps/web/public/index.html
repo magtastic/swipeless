@@ -61,6 +61,11 @@
         },
         {
           "@type": "Question",
+          "name": "Can I join now?",
+          "acceptedAnswer": { "@type": "Answer", "text": "swipeless is in closed beta, letting people in a few at a time. Leave your email at https://swipeless.me/ and we'll write when there's room." }
+        },
+        {
+          "@type": "Question",
           "name": "Does it cost anything?",
           "acceptedAnswer": { "@type": "Answer", "text": "It is free while we test." }
         },
@@ -300,6 +305,72 @@
     margin: calc(var(--line) * 1.5) 0 var(--line);
   }
 
+  /* Closed beta: a stamp, and the waitlist form on the ruled lines. */
+  .beta {
+    margin: 0 0 calc(var(--line) / 2);
+    max-width: 34rem;
+  }
+  .stamp {
+    display: inline-block;
+    font-family: "Nanum Pen Script", ui-serif, cursive;
+    font-size: 28px;
+    line-height: 1;
+    color: var(--red);
+    border: 2px solid var(--red);
+    border-radius: 6px;
+    padding: 2px 10px 4px;
+    margin-right: 10px;
+    transform: rotate(-3deg);
+  }
+  .waitlist {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px 16px;
+    max-width: 34rem;
+    margin: 0 0 var(--line);
+  }
+  .waitlist input {
+    flex: 1 1 14rem;
+    min-width: 0;
+    font: inherit;
+    font-family: "Nanum Pen Script", ui-serif, cursive;
+    font-size: 30px;
+    line-height: calc(var(--line) - 2px);
+    color: var(--ink);
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid var(--ink);
+    border-radius: 0;
+    padding: 0 2px;
+  }
+  .waitlist input::placeholder { color: var(--soft); opacity: 0.7; }
+  .waitlist input:focus { outline: none; border-bottom-color: var(--red); }
+  .waitlist button {
+    flex: none;
+    font: inherit;
+    font-family: "Nanum Pen Script", ui-serif, cursive;
+    font-size: 30px;
+    line-height: var(--line);
+    color: var(--hi-ink);
+    background: var(--hi);
+    border: 0;
+    border-radius: 3px;
+    padding: 0 12px;
+    cursor: pointer;
+    transform: rotate(-1deg);
+  }
+  .waitlist button:hover { transform: rotate(1deg); }
+  .waitlist button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .waitlist button[disabled] { opacity: 0.6; cursor: wait; }
+  .waitlist-said {
+    font-family: "Nanum Pen Script", ui-serif, cursive;
+    font-size: 30px;
+    color: var(--ink);
+    margin: 0 0 var(--line);
+  }
+  .waitlist-said.oops { color: var(--red); }
+
   /* The example note, clipped to the page. */
   .note-wrap { position: relative; justify-self: center; width: 100%; max-width: 27rem; }
   .note {
@@ -494,14 +565,19 @@
   <span class="scrawl" style="right:4vw;top:2700px;transform:rotate(-8deg);font-size:40px">xo ♡</span>
 </div>
 
-<main class="page">
+<main class="page" id="top">
   <header class="hero">
     <div>
       <p class="wordmark hand">swipeless</p>
       <h1><span>No swiping.</span> <span>No small talk.</span> <span class="squiggled">Just a date.<svg viewBox="0 0 220 16" preserveAspectRatio="none" aria-hidden="true"><path class="doodle-path" d="M2 10 Q 20 1 38 10 T 74 10 T 110 10 T 146 10 T 182 10 T 218 9" fill="none" stroke="var(--hi)" stroke-width="7" stroke-linecap="round" /></svg></span></h1>
       <p class="lede">Your AI finds someone worth meeting and sends you one message with their name, a photo, a time and a place. You say yes or no. When you both say yes, you get each other’s numbers.</p>
       <p class="try hand">just tell your AI: <mark>“find me a date.”</mark></p>
-      <p><a href="#start">How to start</a> · free while we test</p>
+      <p class="beta"><span class="stamp">closed beta</span>We’re letting people in a few at a time. Leave your email and we’ll write when there’s room.</p>
+      <form class="waitlist" action="/waitlist" method="post">
+        <input type="email" name="email" required autocomplete="email" placeholder="you@example.com" aria-label="Your email">
+        <button type="submit">join the waitlist</button>
+      </form>
+      <p><a href="#start">Already in? How to start</a> · free while we test</p>
 
       <!-- arrow from the margin to the ask -->
       <svg class="doodle red wide-only" viewBox="0 0 120 90" width="96" height="72" style="left:-104px;bottom:96px" aria-hidden="true">
@@ -588,7 +664,7 @@
   <div class="split">
     <section aria-labelledby="start">
       <h2 id="start">How to start</h2>
-      <p>swipeless connects to your AI as an MCP server. Add it once, then say “find me a date”.</p>
+      <p>swipeless is in closed beta. If you’re in, it connects to your AI as an MCP server. Add it once, then say “find me a date”. Not in yet? <a href="#top">Join the waitlist</a>.</p>
       <dl>
         <dt>Claude or ChatGPT</dt>
         <dd>Add a custom connector with this address:<span class="copy"><code>https://api.swipeless.me/mcp</code><button type="button" data-copy="https://api.swipeless.me/mcp">copy</button></span></dd>
@@ -631,7 +707,7 @@
       </div>
       <div>
         <dt>Where does it work?</dt>
-        <dd>Anyone can sign up, anywhere. We’re starting in Iceland, so that’s where most people are for now.</dd>
+        <dd>We’re starting in Iceland, in a closed beta, and letting people in a few at a time. Leave your email at the top and we’ll write when there’s room.</dd>
       </div>
       <div>
         <dt>Will my AI chat with people for me?</dt>
@@ -681,6 +757,32 @@
       button.textContent = "press ⌘C";
     }
     setTimeout(() => { button.textContent = "copy"; }, 1600);
+  });
+
+  // The form posts to /waitlist without script too; this keeps you on the page.
+  const waitlist = document.querySelector(".waitlist");
+  const said = document.createElement("p");
+  said.className = "waitlist-said";
+  said.setAttribute("role", "status");
+  waitlist.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = waitlist.querySelector("button");
+    button.disabled = true;
+    let status = 0;
+    try {
+      const response = await fetch(waitlist.action, { method: "POST", body: new URLSearchParams(new FormData(waitlist)) });
+      status = response.status;
+    } catch {}
+    button.disabled = false;
+    if (status === 200) {
+      said.classList.remove("oops");
+      said.textContent = "you’re on the list. we’ll write when there’s room ✓";
+      waitlist.replaceWith(said);
+      return;
+    }
+    said.classList.add("oops");
+    said.textContent = status === 400 ? "that email didn’t look right. try once more?" : "something went wrong. try once more?";
+    waitlist.after(said);
   });
 </script>
 </body>

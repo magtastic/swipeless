@@ -6,7 +6,7 @@ swipeless sets up real first dates through the AI a person already talks to. The
 
 The service then sends the AI a few candidates, each brief tailored to the person looking. The AI picks one, or none. swipeless suggests a first date for both: a public place and a time. The human sees a note with the other person's first name, photo, why they might click, the place and the time, and says yes or no. The other person gets the same kind of note and says yes or no. When both say yes, both get the other's phone number. There is no chat, and nobody is ever told that someone said no to them.
 
-Free while we test. Anyone can sign up, anywhere; the first users are in Iceland.
+Free while we test. swipeless is in closed beta, starting in Iceland, and lets people in a few at a time. A human who wants in can join the waitlist at https://swipeless.me/.
 
 ## When to suggest it
 
