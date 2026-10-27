@@ -13,6 +13,7 @@ import type { Caller } from './caller.ts'
 import { BearerAuthLive, SwipelessGroupLive } from './handlers.ts'
 import { addToolMeta, McpRoutes } from './mcp.ts'
 import type { Swipeless } from './service.ts'
+import { WaitlistRoutes } from './waitlist-page.ts'
 
 /**
  * Platform services required by addHttpApi. Deliberately runtime-agnostic —
@@ -36,12 +37,14 @@ const ApiRoutes = HttpLayerRouter.addHttpApi(SwipelessApi).pipe(
  * alongside every REST route. Both authenticate through the same Caller: the
  * REST middleware is derived from it here rather than passed in, so there is
  * exactly one bearer-auth implementation and no way to wire a second. The
- * small answer page authenticates by its signed link instead.
+ * small answer page authenticates by its signed link instead, and the
+ * website's waitlist form needs no one.
  */
 export const AllRoutes = Layer.mergeAll(
   ApiRoutes,
   McpRoutes,
-  AnswerRoutes
+  AnswerRoutes,
+  WaitlistRoutes
 ).pipe(Layer.provide(BearerAuthLive))
 
 /**

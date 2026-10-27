@@ -1,7 +1,7 @@
 import { EmbeddingModel } from '@effect/ai'
 import { PgDrizzle } from '@swipeless/db'
 import { effectiveStatus, isLiveSql } from '@swipeless/db/rules'
-import { adminEvents, profiles, setups } from '@swipeless/db/schema'
+import { adminEvents, profiles, setups, waitlist } from '@swipeless/db/schema'
 import { ProfilePhotos } from '@swipeless/photos'
 import {
   Candidate,
@@ -419,6 +419,18 @@ export class Swipeless extends Effect.Service<Swipeless>()('Swipeless', {
             setupId: row.id,
             profileIds: [row.a, row.b] as const,
           }))
+        }).pipe(Effect.orDie),
+
+      /**
+       * Someone on swipeless.me asks to hear when the closed beta opens.
+       * Asking twice is fine and changes nothing.
+       */
+      joinWaitlist: (email: string): Effect.Effect<void> =>
+        Effect.gen(function* () {
+          yield* db
+            .insert(waitlist)
+            .values({ email: email.toLowerCase(), createdAt: yield* now })
+            .onConflictDoNothing({ target: waitlist.email })
         }).pipe(Effect.orDie),
     }
   }),

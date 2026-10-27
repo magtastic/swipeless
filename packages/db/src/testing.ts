@@ -90,5 +90,5 @@ export const migrate = Effect.gen(function* () {
 /** Empty every table. Run before each test that touches the database. */
 export const truncateAll = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
-  yield* sql`truncate table setups, profiles, admin_events cascade`
+  yield* sql`truncate table setups, profiles, admin_events, waitlist cascade`
 })
